@@ -6,7 +6,28 @@
 
 仓库：https://github.com/luofanglei1-ctrl/grok-desktop
 
-> **GitHub Release 正文：** [docs/RELEASE_v1.0.3.md](./docs/RELEASE_v1.0.3.md) · [docs/RELEASE_v1.0.2.md](./docs/RELEASE_v1.0.2.md)
+> **GitHub Release 正文：** [docs/RELEASE_v1.0.4.md](./docs/RELEASE_v1.0.4.md) · [docs/RELEASE_v1.0.3.md](./docs/RELEASE_v1.0.3.md)
+
+---
+
+## [1.0.4] — 2026-07-22
+
+### 修复
+
+- **退出再打开不再弹出旧的「任务/目标完成」提示**
+  - 完成记录可靠落盘到 Electron `userData`
+  - 目标仅在状态**新变为** complete 时提示（重开 seed 不弹）
+  - 连接/恢复的 `ready` 不再误判为对话结束
+  - 仅真实用户 prompt 结束后才发「任务已完成」
+
+### 变更
+
+- 版本号 **1.0.4**
+
+### 安装包
+
+- `Grok-Desktop-1.0.4-Windows-Setup-x64.exe`
+- `Grok-Desktop-1.0.4-Windows-Portable-x64.exe`
 
 ---
 
@@ -102,6 +123,7 @@
 
 ---
 
+[1.0.4]: https://github.com/luofanglei1-ctrl/grok-desktop/releases/tag/v1.0.4
 [1.0.3]: https://github.com/luofanglei1-ctrl/grok-desktop/releases/tag/v1.0.3
 [1.0.2]: https://github.com/luofanglei1-ctrl/grok-desktop/releases/tag/v1.0.2
 [1.0.1]: https://github.com/luofanglei1-ctrl/grok-desktop/releases/tag/v1.0.1

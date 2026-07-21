@@ -29,7 +29,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-1.0.3-22C55E?style=flat-square" alt="Version 1.0.3" />
+  <img src="https://img.shields.io/badge/version-1.0.4-22C55E?style=flat-square" alt="Version 1.0.4" />
   <img src="https://img.shields.io/badge/platform-Windows%20%7C%20Linux-334155?style=flat-square" alt="Windows and Linux" />
   <img src="https://img.shields.io/badge/UI-中文%20%7C%20English-E11D48?style=flat-square" alt="Chinese and English UI" />
   <img src="https://img.shields.io/badge/backend-official%20Grok%20CLI-111827?style=flat-square" alt="Official Grok CLI backend" />
@@ -170,8 +170,8 @@ grok login
 
 | 文件 | 说明 |
 |---|---|
-| `Grok-Desktop-1.0.3-Windows-Setup-x64.exe` | 推荐安装版（开始菜单 / 桌面快捷方式）。 |
-| `Grok-Desktop-1.0.3-Windows-Portable-x64.exe` | 免安装便携版。 |
+| `Grok-Desktop-1.0.4-Windows-Setup-x64.exe` | 推荐安装版（开始菜单 / 桌面快捷方式）。 |
+| `Grok-Desktop-1.0.4-Windows-Portable-x64.exe` | 免安装便携版。 |
 
 首次使用：确认 CLI → `grok login` → 启动桌面版 → 完成环境检测 → **新对话** 选择工作目录。
 
@@ -346,24 +346,23 @@ Auth stays with the official CLI. Desktop settings are local only. Do not use Fu
 | 文档 | 说明 |
 |------|------|
 | [CHANGELOG.md](./CHANGELOG.md) | 完整版本变更记录 |
-| [docs/RELEASE_v1.0.3.md](./docs/RELEASE_v1.0.3.md) | **v1.0.3 GitHub Release 正文** |
-| [docs/RELEASE_v1.0.2.md](./docs/RELEASE_v1.0.2.md) | v1.0.2 发布说明 |
+| [docs/RELEASE_v1.0.4.md](./docs/RELEASE_v1.0.4.md) | **v1.0.4 GitHub Release 正文** |
+| [docs/RELEASE_v1.0.3.md](./docs/RELEASE_v1.0.3.md) | v1.0.3 发布说明 |
 | [docs/ABOUT.md](./docs/ABOUT.md) | 维护者与品牌信息 |
 | [docs/THEME-SWITCH-DESIGN.md](./docs/THEME-SWITCH-DESIGN.md) | **主题切换设计**（深色 / 普通浅色，待实现） |
 
+### 1.0.4 摘要
+
+- 修复退出再打开仍弹出旧「任务完成」提示
+
 ### 1.0.3 摘要
 
-- 深色 / 普通（浅色）主题；上下文用量条；自动/手动压缩（静默）
-- 思考完整展示、聊天折叠、滚动条与浅色 UI 优化
-
-### 1.0.2 摘要
-
-- 关闭默认进托盘；去掉顶部菜单；打包 Grok 图标  
+- 深色 / 普通主题；上下文用量；自动/手动压缩（静默）  
 
 ---
 
 <p align="center">
-  <strong>Grok Desktop 1.0.3</strong><br />
+  <strong>Grok Desktop 1.0.4</strong><br />
   Windows &amp; Linux · Official Grok CLI<br />
   by <strong>luofanglei</strong> ·
   <a href="https://github.com/luofanglei1-ctrl/grok-desktop">luofanglei1-ctrl/grok-desktop</a>

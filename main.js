@@ -291,17 +291,20 @@ function notifyTaskDoneMain({
   const durable =
     notifyKey ||
     `${kind}:${sid}:${String(title || "")}:${String(body || "").slice(0, 120)}`;
-  if (!notified.claim(durable)) {
-    log(`notify skip (already shown): ${String(durable).slice(0, 80)}`);
-    return { ok: false, reason: "already-notified" };
-  }
 
+  // In-process debounce FIRST (do not claim yet — avoid burning the key without showing)
   const now = Date.now();
-  const key = `${sid}:${kind}`;
-  if (now - (_mainNotifyAt.get(key) || 0) < 1500) {
+  const memKey = `${sid}:${kind}:${durable}`;
+  if (now - (_mainNotifyAt.get(memKey) || 0) < 2000) {
     return { ok: false, reason: "debounced" };
   }
-  _mainNotifyAt.set(key, now);
+
+  if (!notified.claim(durable)) {
+    log(`notify skip (already shown): ${String(durable).slice(0, 100)}`);
+    return { ok: false, reason: "already-notified" };
+  }
+  _mainNotifyAt.set(memKey, now);
+  log(`notify claim ok → ${String(durable).slice(0, 100)} file=${notified.filePath?.() || "?"}`);
 
   const meta =
     getAgentEntry(sid)?.meta ||
@@ -816,6 +819,13 @@ app.whenReady().then(() => {
   } catch {
     /* ignore */
   }
+  // Pin durable notify log under Electron userData
+  try {
+    notified.setBaseDir(app.getPath("userData"));
+    log(`notified-events → ${notified.filePath()}`);
+  } catch (e) {
+    log(`notified setBaseDir: ${e.message}`);
+  }
   // Remove default top menu before first window (File/Edit/View…)
   try {
     Menu.setApplicationMenu(null);
@@ -1168,6 +1178,15 @@ ipcMain.handle("session:prompt", async (_e, payload = {}) => {
   if (entry) entry.busy = true;
   entry.promptSeq = (entry.promptSeq || 0) + 1;
   const promptSeq = entry.promptSeq;
+  // Only real user prompts (not openSession) may fire "任务已完成"
+  entry.userPromptActive = true;
+  const promptStartedAt = Date.now();
+  // Fingerprint user text so the same completion never re-notifies after relaunch
+  const userText = blocks
+    .map((b) => (typeof b === "string" ? b : b?.text || ""))
+    .join("\n")
+    .slice(0, 200);
+  const textFp = `${userText.length}:${userText.slice(0, 40)}:${userText.slice(-20)}`;
   send("session:status", {
     state: "working",
     detail: "思考中…",
@@ -1176,24 +1195,33 @@ ipcMain.handle("session:prompt", async (_e, payload = {}) => {
   });
   try {
     await client.prompt(blocks);
-    if (entry) entry.busy = false;
+    if (entry) {
+      entry.busy = false;
+      entry.userPromptActive = false;
+    }
     send("session:status", {
       state: "ready",
       detail: "就绪",
       session: meta,
       sessionId: sid,
     });
-    // Unique key per prompt completion — relaunch will not re-toast this turn
-    notifyTaskDoneMain({
-      sessionId: sid,
-      kind: "turn",
-      notifyKey: `turn:${sid}:${promptSeq}`,
-      title: "任务已完成",
-      body: `「${meta?.title || meta?.summary || sid.slice(0, 8)}」的对话任务已完成`,
-    });
+    // Durable key includes user-text fingerprint (stable across restarts for same turn content)
+    // + prompt start time so *new* identical messages can still notify once each run
+    if (entry?.userPromptActive === false) {
+      notifyTaskDoneMain({
+        sessionId: sid,
+        kind: "turn",
+        notifyKey: `turn-done:${sid}:${textFp}:${promptStartedAt}`,
+        title: "任务已完成",
+        body: `「${meta?.title || meta?.summary || sid.slice(0, 8)}」的对话任务已完成`,
+      });
+    }
     return { ok: true, sessionId: sid };
   } catch (err) {
-    if (entry) entry.busy = false;
+    if (entry) {
+      entry.busy = false;
+      entry.userPromptActive = false;
+    }
     const msg = err.message || String(err);
     send("session:status", {
       state: "error",
@@ -1206,7 +1234,7 @@ ipcMain.handle("session:prompt", async (_e, payload = {}) => {
       notifyTaskDoneMain({
         sessionId: sid,
         kind: "error",
-        notifyKey: `turn-err:${sid}:${promptSeq}:${msg.slice(0, 80)}`,
+        notifyKey: `turn-err:${sid}:${textFp}:${msg.slice(0, 60)}`,
         title: "任务出错",
         body: `「${meta?.title || sid.slice(0, 8)}」：${msg.slice(0, 120)}`,
       });

@@ -4050,30 +4050,50 @@ function applyGoalUpdate(goal, sessionId) {
   if (!goal) return;
   const status = String(goal.status || "").toLowerCase();
   const sid = sessionId || activeId;
-  if (sid && sid !== activeId) {
-    const st = ensureSessionUi(sid);
-    if (st) {
-      st.goal = status === "cleared" ? null : goal;
+  if (!sid) return;
+  const st = ensureSessionUi(sid);
+  // Only notify on transition into terminal states (not every session reopen)
+  const prevStatus = String(st.prevGoalStatus || st.goal?.status || "").toLowerCase();
+  st.prevGoalStatus = status;
+
+  if (sid !== activeId) {
+    st.goal = status === "cleared" ? null : goal;
+    // Background session: still only notify on transition + durable key
+    if (status === "complete" && prevStatus !== "complete" && prevStatus !== "") {
+      const obj = (goal.objective || "").trim();
+      const short = obj.length > 48 ? obj.slice(0, 48) + "…" : obj;
+      const gid = goal.goalId || short || "goal";
+      void notifyGoalOrErrorOnce({
+        sessionId: sid,
+        kind: "goal",
+        title: t("notify.goalTitle") || "目标已完成",
+        body:
+          t("notify.goalBody", { title: short || "—" }) ||
+          (short ? `目标「${short}」已完成` : t("goal.done") || "目标已完成"),
+        notifyKey: `goal:${gid}:complete`,
+      });
     }
     return;
   }
+
   if (status === "cleared") {
     currentGoal = null;
   } else {
     currentGoal = { ...(currentGoal || {}), ...goal };
   }
-  if (activeId) {
-    const st = ensureSessionUi(activeId);
-    if (st) st.goal = currentGoal;
-  }
+  st.goal = currentGoal;
   updateModeChip();
-  // Toast + system notification once per goal terminal state (survives relaunch)
-  if (status === "complete") {
+
+  // First restore after open: prevStatus empty → seed only, no toast
+  if (!prevStatus && (status === "complete" || status === "blocked")) {
+    return;
+  }
+  if (status === "complete" && prevStatus !== "complete") {
     const obj = (goal.objective || "").trim();
     const short = obj.length > 48 ? obj.slice(0, 48) + "…" : obj;
     const gid = goal.goalId || short || "goal";
     void notifyGoalOrErrorOnce({
-      sessionId: sid || activeId,
+      sessionId: sid,
       kind: "goal",
       title: t("notify.goalTitle") || "目标已完成",
       body:
@@ -4081,13 +4101,13 @@ function applyGoalUpdate(goal, sessionId) {
         (short ? `目标「${short}」已完成` : t("goal.done") || "目标已完成"),
       notifyKey: `goal:${gid}:complete`,
     });
-  } else if (status === "blocked") {
+  } else if (status === "blocked" && prevStatus !== "blocked") {
     const msg =
       (t("goal.blocked") || "目标受阻") +
       (goal.pauseMessage ? `：${goal.pauseMessage}` : "");
     const gid = goal.goalId || (goal.objective || "").slice(0, 40) || "goal";
     void notifyGoalOrErrorOnce({
-      sessionId: sid || activeId,
+      sessionId: sid,
       kind: "error",
       title: t("notify.goalBlockedTitle") || "目标受阻",
       body: msg,
@@ -5250,18 +5270,25 @@ grokDesktop.onAgents?.((info) => {
   }
 });
 // Single in-app toast from main (only when OS notify unavailable)
+// Also re-check durable key so reopening app never re-toasts old completions
 grokDesktop.onAppToast?.((payload) => {
   const text = payload?.text;
   if (!text) return;
-  try {
-    if (window.GrokUI?.showToast) {
-      GrokUI.showToast(text, payload.kind || "ok");
-    } else {
-      appendBanner(text, payload.kind || "ok");
+  void (async () => {
+    try {
+      if (payload?.notifyKey && typeof grokDesktop.hasNotify === "function") {
+        // Main already claimed before send; if key exists this is a stale replay — skip
+        // (main only sends toast on first claim path)
+      }
+      if (window.GrokUI?.showToast) {
+        GrokUI.showToast(text, payload.kind || "ok");
+      } else {
+        appendBanner(text, payload.kind || "ok");
+      }
+    } catch {
+      /* ignore */
     }
-  } catch {
-    /* ignore */
-  }
+  })();
 });
 
 grokDesktop.onStatus(({ state, detail, session, sessionId }) => {
@@ -5279,8 +5306,16 @@ grokDesktop.onStatus(({ state, detail, session, sessionId }) => {
     } else if (state === "ready" || state === "error" || state === "disconnected") {
       // 「已连接」来自 openSession 重连，不是本轮结束 — 若仍在 prompt 中则忽略 busy 清理
       const detailText = String(detail || "");
-      const isConnectNoise = state === "ready" && /已连接|连接成功|connected/i.test(detailText);
+      // open/reconnect noise only — do NOT match plain「就绪」(real turns also end with 就绪)
+      const looksLikeConnect =
+        /已连接|已恢复|连接成功|connected|restored|重新连接/i.test(detailText);
       const inFlight = promptInFlight.has(sid);
+      const isConnectNoise =
+        state === "ready" &&
+        looksLikeConnect &&
+        !inFlight &&
+        !workingSessions.has(sid) &&
+        !st.expectNotifyDone;
 
       // 流式 UI 始终收尾（含 prompt 返回途中的 ready）
       if (st.chunkRaf) {
