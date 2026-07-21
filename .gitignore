@@ -11,3 +11,9 @@ images/
 
 # 误生成的根目录页面
 /index.html
+
+# build output
+release/
+electron-builder.release.json
+electron-builder.out.json
+
