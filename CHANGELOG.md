@@ -2,7 +2,7 @@
 
 本项目版本记录。格式参考 [Keep a Changelog](https://keepachangelog.com/)。
 
-**维护者：** 罗方磊（luofanglei）· [1551180125@qq.com](mailto:1551180125@qq.com) · [@luofanglei1-ctrl](https://github.com/luofanglei1-ctrl)
+**维护者：** luofanglei· [1551180125@qq.com](mailto:1551180125@qq.com) · [@luofanglei1-ctrl](https://github.com/luofanglei1-ctrl)
 
 仓库：https://github.com/luofanglei1-ctrl/grok-desktop
 
@@ -44,7 +44,7 @@
 - **开机自启**：设置中可开启登录时启动（`app.setLoginItemSettings`）。
 - **多分辨率适配**：侧栏 / 内容宽度 / 字号 token 适配 1080p、2K、4K；界面缩放（自动 / 100%–150%）。
 - **浮层组件体系**：Bootstrap 5 + `GrokUI`（Modal / Toast / Offcanvas），弹层不挤占布局。
-- **环境页品牌信息**：`src/brand.js` 配置作者、邮箱、GitHub（罗方磊 / luofanglei1-ctrl）。
+- **环境页品牌信息**：`src/brand.js` 配置作者、邮箱、GitHub（luofanglei1-ctrl）。
 - 项目 UI 开发 skill：`.grok/skills/grok-desktop-ui/`。
 
 ### 变更

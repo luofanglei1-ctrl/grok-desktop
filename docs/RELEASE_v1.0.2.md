@@ -1,7 +1,7 @@
 # Grok Desktop v1.0.2 版本更新说明
 
 **发布日期：** 2026-07-21  
-**维护者：** 罗方磊（luofanglei）· 1551180125@qq.com  
+**维护者：** luofanglei· 1551180125@qq.com  
 **仓库：** https://github.com/luofanglei1-ctrl/grok-desktop  
 
 ---

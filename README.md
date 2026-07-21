@@ -10,7 +10,7 @@
 </p>
 
 <p align="center">
-  维护者 · Maintainer：<strong>罗方磊（luofanglei）</strong><br />
+  维护者 · Maintainer：<strong>luofanglei</strong><br />
   <a href="mailto:1551180125@qq.com">1551180125@qq.com</a> ·
   <a href="https://github.com/luofanglei1-ctrl">@luofanglei1-ctrl</a>
 </p>
@@ -264,7 +264,7 @@ Grok Desktop
 
 | 项 | 内容 |
 |----|------|
-| 作者 | **罗方磊（luofanglei）** |
+| 作者 | **luofanglei** |
 | 邮箱 | [1551180125@qq.com](mailto:1551180125@qq.com) |
 | GitHub | [@luofanglei1-ctrl](https://github.com/luofanglei1-ctrl) |
 | 仓库 | https://github.com/luofanglei1-ctrl/grok-desktop |
@@ -329,7 +329,7 @@ Auth stays with the official CLI. Desktop settings are local only. Do not use Fu
 
 ### Maintainer
 
-- **罗方磊 (luofanglei)** · [1551180125@qq.com](mailto:1551180125@qq.com)
+- **luofanglei** · [1551180125@qq.com](mailto:1551180125@qq.com)
 - GitHub: [@luofanglei1-ctrl](https://github.com/luofanglei1-ctrl)
 - Issues: https://github.com/luofanglei1-ctrl/grok-desktop/issues
 
@@ -365,6 +365,6 @@ Auth stays with the official CLI. Desktop settings are local only. Do not use Fu
 <p align="center">
   <strong>Grok Desktop 1.0.2</strong><br />
   Windows &amp; Linux · Official Grok CLI<br />
-  by <strong>罗方磊 / luofanglei</strong> ·
+  by <strong>luofanglei</strong> ·
   <a href="https://github.com/luofanglei1-ctrl/grok-desktop">luofanglei1-ctrl/grok-desktop</a>
 </p>

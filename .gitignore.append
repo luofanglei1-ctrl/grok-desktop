@@ -1,0 +1,3 @@
+release/
+electron-builder.release.json
+electron-builder.out.json

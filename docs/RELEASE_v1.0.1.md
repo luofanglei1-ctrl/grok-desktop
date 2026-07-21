@@ -1,7 +1,7 @@
 # Grok Desktop v1.0.1 版本更新说明
 
 **发布日期：** 2026-07-21  
-**维护者：** 罗方磊（luofanglei）· [1551180125@qq.com](mailto:1551180125@qq.com)  
+**维护者：** luofanglei· [1551180125@qq.com](mailto:1551180125@qq.com)  
 **仓库：** https://github.com/luofanglei1-ctrl/grok-desktop  
 
 ---
@@ -66,7 +66,7 @@
 ### 8. 环境页（你的信息）
 
 - **设置 → 环境** 展示维护者信息（`src/brand.js`）：
-  - 罗方磊 · @luofanglei1-ctrl · 1551180125@qq.com
+  - luofanglei · @luofanglei1-ctrl · 1551180125@qq.com
   - 项目仓库 / Issues / Releases
 
 ---

@@ -5,7 +5,7 @@
 module.exports = {
   productName: "Grok Desktop",
   /** Display name */
-  authorName: "罗方磊",
+  authorName: "luofanglei",
   /** English / handle */
   authorHandle: "luofanglei",
   authorEmail: "1551180125@qq.com",
