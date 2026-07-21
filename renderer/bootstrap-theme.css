@@ -1,0 +1,323 @@
+/**
+ * Bootstrap 5.3 theme bridge — map to Grok Desktop dark tokens.
+ * Loaded after bootstrap.min.css, before styles.css.
+ */
+:root,
+[data-bs-theme="dark"] {
+  --bs-body-bg: #09090b;
+  --bs-body-color: #fafafa;
+  --bs-body-font-family: "Segoe UI", "PingFang SC", "Noto Sans SC", "Microsoft YaHei", system-ui, sans-serif;
+  --bs-body-font-size: var(--fs-base, 13.5px);
+  --bs-body-line-height: 1.5;
+
+  --bs-emphasis-color: #fafafa;
+  --bs-secondary-color: #a1a1aa;
+  --bs-tertiary-color: #71717a;
+  --bs-secondary-bg: #141418;
+  --bs-tertiary-bg: #1c1c22;
+
+  --bs-border-color: #27272f;
+  --bs-border-radius: 0.75rem;
+  --bs-border-radius-sm: 0.5rem;
+  --bs-border-radius-lg: 0.875rem;
+
+  --bs-primary: #8b5cf6;
+  --bs-primary-rgb: 139, 92, 246;
+  --bs-primary-bg-subtle: rgba(139, 92, 246, 0.15);
+  --bs-primary-border-subtle: rgba(139, 92, 246, 0.4);
+  --bs-primary-text-emphasis: #c4b5fd;
+
+  --bs-success: #4ade80;
+  --bs-success-rgb: 74, 222, 128;
+  --bs-warning: #fbbf24;
+  --bs-warning-rgb: 251, 191, 36;
+  --bs-danger: #fb7185;
+  --bs-danger-rgb: 251, 113, 133;
+  --bs-info: #6366f1;
+  --bs-info-rgb: 99, 102, 241;
+
+  --bs-link-color: #a78bfa;
+  --bs-link-hover-color: #c4b5fd;
+
+  --bs-focus-ring-color: rgba(139, 92, 246, 0.4);
+  --bs-form-valid-color: #4ade80;
+  --bs-form-invalid-color: #fb7185;
+}
+
+/* Bootstrap utilities must not break the fixed Electron shell layout */
+html,
+body {
+  height: 100%;
+  overflow: hidden;
+}
+
+/* Prefer project shell layout over Bootstrap container defaults inside #app */
+#app .container,
+#app .container-fluid {
+  max-width: none;
+  padding-left: 0;
+  padding-right: 0;
+}
+
+/* Align common Bootstrap form controls with desktop density */
+#app .form-control,
+#app .form-select {
+  background-color: var(--bs-secondary-bg);
+  border-color: var(--bs-border-color);
+  color: var(--bs-body-color);
+  font-size: var(--fs-md, 12.5px);
+}
+
+#app .form-control:focus,
+#app .form-select:focus {
+  border-color: var(--bs-primary);
+  box-shadow: 0 0 0 0.2rem rgba(139, 92, 246, 0.25);
+  background-color: var(--bs-secondary-bg);
+  color: var(--bs-body-color);
+}
+
+/* Bootstrap native .btn-* (when used) — purple primary palette */
+#app .btn-primary {
+  --bs-btn-color: #fff;
+  --bs-btn-bg: #8b5cf6;
+  --bs-btn-border-color: #8b5cf6;
+  --bs-btn-hover-color: #fff;
+  --bs-btn-hover-bg: #7c3aed;
+  --bs-btn-hover-border-color: #7c3aed;
+  --bs-btn-focus-shadow-rgb: 139, 92, 246;
+  --bs-btn-active-color: #fff;
+  --bs-btn-active-bg: #6d28d9;
+  --bs-btn-active-border-color: #6d28d9;
+  --bs-btn-disabled-color: #fff;
+  --bs-btn-disabled-bg: #8b5cf6;
+  --bs-btn-disabled-border-color: #8b5cf6;
+}
+
+#app .btn-outline-primary {
+  --bs-btn-color: #c4b5fd;
+  --bs-btn-border-color: rgba(139, 92, 246, 0.45);
+  --bs-btn-hover-bg: rgba(139, 92, 246, 0.15);
+  --bs-btn-hover-border-color: #8b5cf6;
+  --bs-btn-hover-color: #ede9fe;
+  --bs-btn-focus-shadow-rgb: 139, 92, 246;
+  --bs-btn-active-color: #fff;
+  --bs-btn-active-bg: #8b5cf6;
+  --bs-btn-active-border-color: #8b5cf6;
+}
+
+#app .btn-secondary {
+  --bs-btn-color: #fafafa;
+  --bs-btn-bg: #1c1c22;
+  --bs-btn-border-color: #27272f;
+  --bs-btn-hover-color: #fafafa;
+  --bs-btn-hover-bg: #24242c;
+  --bs-btn-hover-border-color: #3f3f46;
+  --bs-btn-active-bg: #27272f;
+  --bs-btn-active-border-color: #3f3f46;
+  --bs-btn-disabled-bg: #1c1c22;
+  --bs-btn-disabled-border-color: #27272f;
+}
+
+#app .btn-outline-secondary {
+  --bs-btn-color: #a1a1aa;
+  --bs-btn-border-color: #27272f;
+  --bs-btn-hover-bg: #1c1c22;
+  --bs-btn-hover-border-color: #3f3f46;
+  --bs-btn-hover-color: #fafafa;
+}
+
+#app .btn-danger {
+  --bs-btn-color: #fff;
+  --bs-btn-bg: #e11d48;
+  --bs-btn-border-color: #e11d48;
+  --bs-btn-hover-bg: #be123c;
+  --bs-btn-hover-border-color: #be123c;
+  --bs-btn-active-bg: #9f1239;
+  --bs-btn-active-border-color: #9f1239;
+}
+
+#app .btn-outline-danger {
+  --bs-btn-color: #fb7185;
+  --bs-btn-border-color: rgba(251, 113, 133, 0.45);
+  --bs-btn-hover-bg: rgba(251, 113, 133, 0.15);
+  --bs-btn-hover-border-color: #fb7185;
+  --bs-btn-hover-color: #fecdd3;
+}
+
+/* Tighter default Bootstrap button density inside desktop shell */
+#app .btn.btn-sm {
+  --bs-btn-padding-y: 0.28rem;
+  --bs-btn-padding-x: 0.65rem;
+  --bs-btn-font-size: var(--fs-xs, 10.5px);
+  --bs-btn-border-radius: 0.5rem;
+}
+
+#app .card {
+  background-color: #141418;
+  border-color: #27272f;
+  color: #fafafa;
+}
+
+#app .modal-content {
+  background-color: #141418;
+  border-color: #27272f;
+  color: #fafafa;
+}
+
+#app .dropdown-menu {
+  background-color: #141418;
+  border-color: #27272f;
+}
+
+#app .dropdown-item {
+  color: #fafafa;
+}
+
+#app .dropdown-item:hover,
+#app .dropdown-item:focus {
+  background-color: #1c1c22;
+  color: #fafafa;
+}
+
+#app .badge {
+  font-weight: 500;
+}
+
+#app .text-bg-primary {
+  background-color: rgba(139, 92, 246, 0.25) !important;
+  color: #c4b5fd !important;
+}
+
+/* ── Bootstrap overlay surfaces (fixed, no layout reflow) ── */
+.modal {
+  --bs-modal-bg: #16161c;
+  --bs-modal-color: #fafafa;
+  --bs-modal-border-color: #27272f;
+  --bs-modal-header-border-color: #27272f;
+  --bs-modal-footer-border-color: #27272f;
+  --bs-modal-border-radius: 1rem;
+}
+.modal-backdrop {
+  --bs-backdrop-bg: #000;
+  --bs-backdrop-opacity: 0.55;
+}
+.modal-content {
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.55);
+}
+.modal-title {
+  font-size: var(--fs-title, 1rem);
+  font-weight: 650;
+}
+.offcanvas {
+  --bs-offcanvas-bg: #121218;
+  --bs-offcanvas-color: #fafafa;
+  --bs-offcanvas-border-color: #27272f;
+  --bs-offcanvas-width: min(360px, 92vw);
+  z-index: 10800;
+}
+.offcanvas-backdrop {
+  z-index: 10790;
+}
+.toast {
+  --bs-toast-bg: rgba(30, 24, 48, 0.96);
+  --bs-toast-color: #fafafa;
+  --bs-toast-border-color: transparent;
+  font-size: var(--fs-md, 0.8rem);
+}
+.toast.text-bg-warning {
+  --bs-toast-bg: rgba(40, 32, 12, 0.96);
+  color: #fbbf24 !important;
+}
+.toast.text-bg-danger {
+  --bs-toast-bg: rgba(40, 16, 20, 0.96);
+}
+.toast.text-bg-success {
+  --bs-toast-bg: rgba(16, 32, 22, 0.96);
+}
+.toast.text-bg-primary {
+  --bs-toast-bg: rgba(30, 24, 48, 0.96);
+}
+.toast-container {
+  pointer-events: none;
+}
+.toast-container .toast {
+  pointer-events: auto;
+}
+/* Permission floating layer */
+.perm-layer {
+  position: fixed !important;
+  left: 50%;
+  bottom: 96px;
+  transform: translateX(-50%);
+  z-index: 10850;
+  width: min(520px, calc(100vw - 32px));
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  pointer-events: none;
+}
+.perm-layer.d-none,
+.perm-layer.hidden {
+  display: none !important;
+}
+.perm-bs-card {
+  pointer-events: auto;
+  background: #1c1810 !important;
+}
+.perm-bs-card .perm-detail {
+  max-height: 120px;
+  overflow: auto;
+  background: #0a0a0c;
+  border-radius: 8px;
+  padding: 8px 10px;
+  color: #d4d4d8;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+/* Fixed dropdown context menu */
+#session-ctx.dropdown-menu {
+  position: fixed !important;
+  inset: auto auto auto auto;
+  margin: 0;
+  z-index: 10900;
+  min-width: 10rem;
+}
+/* Update strip stays fixed */
+.update-banner {
+  position: fixed !important;
+  top: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 10820;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  border-radius: 999px;
+  background: rgba(30, 24, 48, 0.95);
+  border: 1px solid rgba(167, 139, 250, 0.45);
+  color: #e9e4ff;
+  font-size: var(--fs-md, 12.5px);
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.4);
+  max-width: min(560px, 94vw);
+}
+.update-banner.d-none,
+.update-banner.hidden {
+  display: none !important;
+}
+/* Slash / model popovers already absolute — ensure high z-index */
+.slash-menu {
+  z-index: 70 !important;
+}
+.model-popover {
+  z-index: 80 !important;
+}
+/* Prevent Bootstrap modal from adding padding to body that shifts layout */
+body.modal-open {
+  overflow: hidden !important;
+  padding-right: 0 !important;
+}
+body.modal-open #app {
+  /* keep shell fixed size when modal open */
+  width: 100vw;
+}

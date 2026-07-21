@@ -1,0 +1,933 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-bs-theme="dark">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'; img-src 'self' data: blob:; media-src 'self' data: blob:;"
+    />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Grok Desktop</title>
+    <!-- Bootstrap 5 (vendored for CSP / offline packaging) -->
+    <link rel="stylesheet" href="vendor/bootstrap/bootstrap.min.css" />
+    <link rel="stylesheet" href="bootstrap-theme.css" />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div id="app">
+      <!-- ===== LEFT: brand + nav + session rail ===== -->
+      <aside id="sidebar">
+        <div class="brand">
+          <img class="brand-mark" src="icon.png" alt="Grok" width="36" height="36" />
+          <div class="brand-text">
+            <div class="brand-name">Grok Desktop</div>
+          </div>
+        </div>
+
+        <button type="button" class="btn-new" id="btn-new">
+          <span class="plus">＋</span>
+          <span data-i18n="nav.newChat">新对话</span>
+          <kbd>N</kbd>
+        </button>
+
+        <nav class="rail-nav" aria-label="主导航">
+          <button type="button" class="rail-item active" data-view="chat">
+            <span class="rail-ico">💬</span><span data-i18n="nav.chat">对话</span>
+          </button>
+          <button type="button" class="rail-item" data-view="memory">
+            <span class="rail-ico">🧠</span><span data-i18n="nav.memory">记忆</span>
+          </button>
+          <button type="button" class="rail-item" data-view="skills">
+            <span class="rail-ico">⚡</span><span data-i18n="nav.skills">Skills</span>
+          </button>
+          <button type="button" class="rail-item" data-view="plugins">
+            <span class="rail-ico">🧩</span><span data-i18n="nav.plugins">插件</span>
+          </button>
+        </nav>
+
+        <div class="session-panel" id="session-section">
+          <div class="panel-head">
+            <span data-i18n="nav.recent">最近会话</span>
+            <button type="button" id="btn-refresh" class="icon-btn" data-i18n-title="nav.refresh" title="刷新列表">↻</button>
+          </div>
+          <label class="search-box" for="search">
+            <span>⌕</span>
+            <input id="search" type="search" data-i18n-placeholder="nav.searchPh" placeholder="搜索标题 / 全文…" autocomplete="off" />
+          </label>
+          <div id="search-hits" class="search-hits hidden" role="list"></div>
+          <div id="session-list" class="session-list" role="list"></div>
+        </div>
+
+        <div class="side-bottom-nav">
+          <button type="button" class="rail-item settings-item" id="nav-settings" data-view="settings">
+            <span class="rail-ico">⚙</span><span data-i18n="nav.settings">设置</span>
+          </button>
+        </div>
+
+        <footer class="side-foot">
+          <div id="cli-info" class="cli-info" title="">检测 CLI…</div>
+        </footer>
+      </aside>
+
+      <!-- ===== MAIN ===== -->
+      <main id="workspace">
+        <!-- CHAT -->
+        <div id="view-chat" class="view active">
+          <header class="topbar" id="topbar">
+            <div class="topbar-left">
+              <h1 id="chat-title">欢迎使用 Grok Desktop</h1>
+              <p id="chat-sub" class="sub">选择左侧会话继续，或开始新对话</p>
+            </div>
+            <div class="topbar-right">
+              <div class="session-actions hidden" id="session-actions">
+                <button type="button" class="btn plan-btn" id="btn-plan-toggle" data-i18n-title="chat.planHint" title="打开 / 关闭计划面板">
+                  <span class="plan-btn-ico" aria-hidden="true">☰</span>
+                  <span data-i18n="chat.plan">计划</span>
+                  <span class="plan-badge hidden" id="plan-badge">0</span>
+                </button>
+                <button type="button" class="btn ghost" id="btn-act-export" title="导出 Markdown" data-i18n="chat.export">导出</button>
+                <button type="button" class="btn ghost" id="btn-rename" title="重命名" data-i18n="chat.rename">重命名</button>
+                <button type="button" class="btn ghost danger" id="btn-delete" title="删除会话" data-i18n="chat.delete">删除</button>
+              </div>
+              <div id="status-pill" class="status" data-state="idle" data-i18n="chat.ready">就绪</div>
+            </div>
+          </header>
+
+          <div id="session-tabs" class="session-tabs hidden" role="tablist" aria-label="打开的会话"></div>
+
+          <div id="live-strip" class="live-strip hidden">
+            <span id="strip-access" class="access-chip" title="">—</span>
+            <span class="dot">·</span>
+            <span id="strip-model">—</span>
+            <span class="dot">·</span>
+            <span id="strip-effort">—</span>
+            <span class="dot">·</span>
+            <span id="strip-cwd">—</span>
+            <span class="dot">·</span>
+            <span id="strip-queue" class="hidden">队列 0</span>
+            <span class="dot plan-dot hidden" id="plan-dot">·</span>
+            <button type="button" id="btn-plan-toggle-strip" class="strip-link hidden" data-i18n="chat.plan" data-i18n-title="chat.planHint">计划</button>
+          </div>
+
+          <div class="chat-body">
+            <div class="thread-shell">
+              <div id="thread-bg" class="thread-bg" aria-hidden="true"></div>
+              <div id="thread-bg-dim" class="thread-bg-dim" aria-hidden="true"></div>
+              <div id="thread" class="thread">
+                <div id="thread-inner" class="thread-inner">
+                  <!-- welcome injected by JS -->
+                </div>
+              </div>
+            </div>
+
+            <!-- plan moved to Bootstrap Offcanvas (body end) — does not reflow chat -->
+          </div>
+
+          <div id="composer-dock">
+            <div id="slash-menu" class="slash-menu hidden" role="listbox" aria-label="斜杠命令"></div>
+            <div id="context-chips" class="context-chips hidden"></div>
+            <div id="attach-preview" class="attach-preview hidden"></div>
+            <div id="composer" class="composer">
+              <div id="mode-chip-row" class="mode-chip-row hidden">
+                <span id="mode-chip" class="mode-chip" data-mode="default">
+                  <span class="mode-chip-ico" aria-hidden="true">⚡</span>
+                  <span id="mode-chip-label" data-i18n="mode.task">任务模式</span>
+                  <button
+                    type="button"
+                    class="mode-chip-x chip-tip"
+                    id="mode-chip-clear"
+                    data-bs-toggle="tooltip"
+                    data-bs-placement="top"
+                    data-bs-title="退出计划模式"
+                    title="退出计划模式"
+                    aria-label="退出计划模式"
+                  >×</button>
+                </span>
+                <span id="goal-chip" class="mode-chip goal-chip hidden" data-mode="goal">
+                  <span class="mode-chip-ico" aria-hidden="true">◎</span>
+                  <span id="goal-chip-label" class="goal-chip-label chip-tip" data-bs-toggle="tooltip" data-bs-placement="top" title="">目标</span>
+                  <span
+                    id="goal-chip-status"
+                    class="goal-chip-status chip-tip"
+                    data-bs-toggle="tooltip"
+                    data-bs-placement="top"
+                    data-bs-title="目标状态"
+                    title="目标状态"
+                  >—</span>
+                  <span class="goal-chip-actions" role="group" aria-label="目标操作">
+                    <button
+                      type="button"
+                      class="goal-chip-btn chip-tip"
+                      id="goal-chip-status-btn"
+                      data-bs-toggle="tooltip"
+                      data-bs-placement="top"
+                      data-bs-title="目标状态"
+                      title="目标状态"
+                      aria-label="目标状态"
+                    >状态</button>
+                    <button
+                      type="button"
+                      class="goal-chip-btn chip-tip"
+                      id="goal-chip-pause"
+                      data-bs-toggle="tooltip"
+                      data-bs-placement="top"
+                      data-bs-title="暂停目标"
+                      title="暂停目标"
+                      aria-label="暂停目标"
+                    >暂停</button>
+                    <button
+                      type="button"
+                      class="goal-chip-btn chip-tip"
+                      id="goal-chip-resume"
+                      data-bs-toggle="tooltip"
+                      data-bs-placement="top"
+                      data-bs-title="恢复目标"
+                      title="恢复目标"
+                      aria-label="恢复目标"
+                    >恢复</button>
+                    <button
+                      type="button"
+                      class="goal-chip-btn goal-chip-btn-danger chip-tip"
+                      id="goal-chip-clear"
+                      data-bs-toggle="tooltip"
+                      data-bs-placement="top"
+                      data-bs-title="清除目标"
+                      title="清除目标"
+                      aria-label="清除目标"
+                    >清除</button>
+                  </span>
+                </span>
+              </div>
+              <textarea
+                id="input"
+                rows="1"
+                data-i18n-placeholder="chat.inputPh"
+                placeholder="消息 · 拖入图片 · / 命令 · 点 + 添加… Enter 发送"
+                disabled
+              ></textarea>
+              <div class="composer-bar">
+                <div class="composer-left">
+                  <!-- + menu: attach / plan / task (ref: 计划模式.png) -->
+                  <div class="plus-menu-wrap dropup">
+                    <button
+                      type="button"
+                      id="btn-plus"
+                      class="btn btn-outline-secondary btn-sm plus-btn"
+                      data-bs-toggle="dropdown"
+                      data-bs-auto-close="true"
+                      aria-expanded="false"
+                      title="添加"
+                      disabled
+                    >
+                      <span class="plus-btn-ico" aria-hidden="true">+</span>
+                    </button>
+                    <ul
+                      id="composer-plus-menu"
+                      class="dropdown-menu dropdown-menu-dark shadow plus-menu"
+                      aria-labelledby="btn-plus"
+                    >
+                      <li><h6 class="dropdown-header" data-i18n="plus.sectionAdd">添加</h6></li>
+                      <li>
+                        <button type="button" class="dropdown-item plus-item" data-act="attach-files">
+                          <span class="plus-ico" aria-hidden="true">📎</span>
+                          <span class="plus-text">
+                            <span class="plus-title" data-i18n="plus.files">文件和文件夹</span>
+                            <span class="plus-desc" data-i18n="plus.filesDesc">附加到本轮对话</span>
+                          </span>
+                        </button>
+                      </li>
+                      <li>
+                        <button type="button" class="dropdown-item plus-item" data-act="attach-images">
+                          <span class="plus-ico" aria-hidden="true">🖼</span>
+                          <span class="plus-text">
+                            <span class="plus-title" data-i18n="plus.images">图片</span>
+                            <span class="plus-desc" data-i18n="plus.imagesDesc">附加图片到消息</span>
+                          </span>
+                        </button>
+                      </li>
+                      <li><hr class="dropdown-divider" /></li>
+                      <li><h6 class="dropdown-header" data-i18n="plus.sectionMode">模式</h6></li>
+                      <li>
+                        <button type="button" class="dropdown-item plus-item" data-act="mode-goal">
+                          <span class="plus-ico" aria-hidden="true">◎</span>
+                          <span class="plus-text">
+                            <span class="plus-title" data-i18n="mode.goal">目标</span>
+                            <span class="plus-desc" data-i18n="mode.goalDesc">设置要持续追求的目标（/goal）</span>
+                          </span>
+                          <span class="plus-check" data-check="goal">✓</span>
+                        </button>
+                      </li>
+                      <li>
+                        <button type="button" class="dropdown-item plus-item" data-act="mode-task">
+                          <span class="plus-ico" aria-hidden="true">⚡</span>
+                          <span class="plus-text">
+                            <span class="plus-title" data-i18n="mode.task">任务模式</span>
+                            <span class="plus-desc" data-i18n="mode.taskDesc">正常执行与改代码（默认）</span>
+                          </span>
+                          <span class="plus-check" data-check="task">✓</span>
+                        </button>
+                      </li>
+                      <li>
+                        <button type="button" class="dropdown-item plus-item" data-act="mode-plan">
+                          <span class="plus-ico" aria-hidden="true">💡</span>
+                          <span class="plus-text">
+                            <span class="plus-title" data-i18n="mode.plan">计划模式</span>
+                            <span class="plus-desc" data-i18n="mode.planDesc">先探索设计方案，再动手改代码</span>
+                          </span>
+                          <span class="plus-check" data-check="plan">✓</span>
+                        </button>
+                      </li>
+                      <li>
+                        <button type="button" class="dropdown-item plus-item" data-act="view-plan">
+                          <span class="plus-ico" aria-hidden="true">☰</span>
+                          <span class="plus-text">
+                            <span class="plus-title" data-i18n="mode.viewPlan">查看计划</span>
+                            <span class="plus-desc" data-i18n="mode.viewPlanDesc">打开计划面板</span>
+                          </span>
+                        </button>
+                      </li>
+                      <li><hr class="dropdown-divider" /></li>
+                      <li>
+                        <button type="button" class="dropdown-item plus-item" data-act="access">
+                          <span class="plus-ico" aria-hidden="true">🛡</span>
+                          <span class="plus-text">
+                            <span class="plus-title" data-i18n="plus.access">访问权限</span>
+                            <span class="plus-desc" id="plus-access-desc">完全访问</span>
+                          </span>
+                        </button>
+                      </li>
+                    </ul>
+                  </div>
+                  <!-- legacy id for scripts that still query btn-file -->
+                  <button type="button" id="btn-file" class="d-none" tabindex="-1" aria-hidden="true"></button>
+                  <span id="cwd-chip" class="chip" data-i18n="chat.noCwd">未选择工作目录</span>
+                </div>
+                <div class="composer-right">
+                  <div class="model-wrap">
+                    <div id="effort-popover" class="model-popover hidden" role="listbox"></div>
+                    <button type="button" id="btn-effort" class="btn-model" disabled title="推理强度">
+                      <span id="effort-label" data-i18n="chat.effort">强度</span>
+                      <span class="caret">▴</span>
+                    </button>
+                  </div>
+                  <div class="model-wrap">
+                    <div id="model-popover" class="model-popover hidden" role="listbox"></div>
+                    <button type="button" id="btn-model" class="btn-model" disabled title="选择模型">
+                      <span id="model-label" data-i18n="chat.model">模型</span>
+                      <span class="caret">▴</span>
+                    </button>
+                  </div>
+                  <button type="button" id="btn-cancel" class="btn ghost" disabled data-i18n="chat.stop">停止</button>
+                  <button type="button" id="btn-send" class="btn send" disabled title="发送" data-i18n="chat.send">发送 ↑</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- MEMORY -->
+        <div id="view-memory" class="view">
+          <header class="page-header">
+            <div>
+              <h1>跨会话记忆</h1>
+              <p class="page-desc">让 Grok 在新对话里仍记得你的约定（写在 ~/.grok/memory）</p>
+            </div>
+            <div class="page-actions">
+              <label class="switch">
+                <input type="checkbox" id="memory-enabled" />
+                <span>启用记忆</span>
+              </label>
+              <button type="button" id="btn-memory-add" class="btn primary">＋ 记一条</button>
+              <button type="button" id="btn-memory-refresh" class="btn">刷新</button>
+              <button type="button" id="btn-memory-clear" class="btn danger">清空</button>
+            </div>
+          </header>
+          <div class="memory-howto">
+            <strong>有什么用？</strong>
+            例如「这个项目用 pnpm」「永远用中文回复」。开启后，之后新开的对话会自动检索这些内容，不用反复说明。
+            也可在聊天里让 Grok「记住 xxx」；这里适合手动整理、编辑、备份。
+          </div>
+          <div class="page-split">
+            <div id="memory-list" class="card-list"></div>
+            <div id="memory-detail" class="detail-panel">
+              <div class="welcome-mini">
+                <h2>还没有记忆文件</h2>
+                <p>先打开右上角「启用记忆」，再点「记一条」，或在对话中说「请记住：……」。</p>
+                <ul>
+                  <li><strong>全局</strong>：所有项目共用的偏好</li>
+                  <li><strong>项目</strong>：某个目录/仓库专属约定</li>
+                </ul>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- SKILLS -->
+        <div id="view-skills" class="view">
+          <header class="page-header">
+            <div>
+              <h1>Skills</h1>
+              <p class="page-desc">可复用任务说明 · 放在 ~/.grok/skills 下自动发现</p>
+            </div>
+            <div class="page-actions">
+              <button type="button" id="btn-skill-refresh" class="btn">刷新</button>
+              <button type="button" id="btn-skill-create" class="btn primary">新建</button>
+            </div>
+          </header>
+          <div class="page-split">
+            <div id="skills-list" class="card-list"></div>
+            <div id="skill-detail" class="detail-panel">
+              <div class="welcome-mini">
+                <h2>Skill 怎么用？</h2>
+                <p>每个 Skill 是一份 SKILL.md。对话里相关任务会自动加载；也可在此浏览与编辑。</p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- PLUGINS -->
+        <div id="view-plugins" class="view">
+          <header class="page-header">
+            <div>
+              <h1>插件</h1>
+              <p class="page-desc">扩展技能、MCP、Hooks · 通过官方 marketplace 或 git 安装</p>
+            </div>
+            <div class="page-actions">
+              <button type="button" id="btn-plugin-refresh" class="btn">刷新</button>
+            </div>
+          </header>
+          <div class="install-bar">
+            <input id="plugin-install-spec" type="text" placeholder="插件名、owner/repo、git URL 或本地路径" />
+            <button type="button" id="btn-plugin-install" class="btn primary">安装</button>
+          </div>
+          <div class="tabs">
+            <button type="button" class="tab active" data-ptab="installed">已安装</button>
+            <button type="button" class="tab" data-ptab="market">市场</button>
+          </div>
+          <div class="page-body-scroll">
+            <div id="plugins-installed" class="card-list flat"></div>
+            <div id="plugins-market" class="card-list flat hidden"></div>
+          </div>
+        </div>
+
+        <!-- SETTINGS: desktop layout with left categories and right content -->
+        <div id="view-settings" class="view settings-shell">
+          <aside class="settings-rail">
+            <button type="button" class="settings-back" id="settings-back" data-i18n="settings.back">← 返回应用</button>
+            <div class="settings-search">
+              <input type="search" id="settings-search" data-i18n-placeholder="settings.searchPh" placeholder="搜索设置…" autocomplete="off" />
+            </div>
+            <div class="settings-nav-scroll">
+              <div class="sn-group" data-i18n="settings.group.personal">个人</div>
+              <button type="button" class="sn-item active" data-panel="general">⚙ <span data-i18n="settings.general">常规</span></button>
+              <button type="button" class="sn-item" data-panel="appearance">◐ <span data-i18n="settings.appearance">外观</span></button>
+              <button type="button" class="sn-item" data-panel="model">✦ <span data-i18n="settings.model">模型</span></button>
+              <button type="button" class="sn-item" data-panel="memory">🧠 <span data-i18n="settings.memory">记忆</span></button>
+              <div class="sn-group" data-i18n="settings.group.security">权限与安全</div>
+              <button type="button" class="sn-item" data-panel="permissions">🛡 <span data-i18n="settings.permissions">权限</span></button>
+              <div class="sn-group" data-i18n="settings.group.integrations">集成</div>
+              <button type="button" class="sn-item" data-panel="skills">⚡ <span data-i18n="settings.skills">Skills</span></button>
+              <button type="button" class="sn-item" data-panel="plugins">🧩 <span data-i18n="settings.plugins">插件</span></button>
+              <button type="button" class="sn-item" data-panel="mcp">🔌 <span data-i18n="settings.mcp">MCP</span></button>
+              <div class="sn-group" data-i18n="settings.group.about">关于</div>
+              <button type="button" class="sn-item" data-panel="about">ℹ <span data-i18n="settings.about">环境</span></button>
+            </div>
+          </aside>
+          <section class="settings-main">
+            <div class="settings-panel active" id="panel-general" data-panel="general">
+              <h1 data-i18n="settings.general">常规</h1>
+              <p class="settings-lead" data-i18n="settings.generalLead">语言、输入、通知与更新</p>
+              <div class="scard">
+                <div class="scard-row">
+                  <div>
+                    <div class="scard-title" data-i18n="settings.language">界面语言</div>
+                    <div class="scard-desc" data-i18n="settings.languageDesc">中文 / English，立即生效</div>
+                  </div>
+                  <select id="set-locale">
+                    <option value="zh">中文</option>
+                    <option value="en">English</option>
+                  </select>
+                </div>
+                <div class="scard-row">
+                  <div>
+                    <div class="scard-title" data-i18n="settings.enterSend">Enter 发送消息</div>
+                    <div class="scard-desc" data-i18n="settings.enterSendDesc">空闲时发送；任务进行中为排队。Shift+Enter 始终换行</div>
+                  </div>
+                  <input type="checkbox" id="set-enter-send" class="toggle" />
+                </div>
+                <div class="scard-row">
+                  <div>
+                    <div class="scard-title" data-i18n="settings.showThinking">显示思考过程</div>
+                    <div class="scard-desc" data-i18n="settings.showThinkingDesc">在对话中展示模型的思考片段</div>
+                  </div>
+                  <input type="checkbox" id="set-show-thinking" class="toggle" />
+                </div>
+                <div class="scard-row">
+                  <div>
+                    <div class="scard-title" data-i18n="settings.notifyDone">完成后通知</div>
+                    <div class="scard-desc" data-i18n="settings.notifyDoneDesc">对话或目标任务完成时弹出系统通知</div>
+                  </div>
+                  <input type="checkbox" id="set-notify-done" class="toggle" />
+                </div>
+                <div class="scard-row">
+                  <div>
+                    <div class="scard-title" data-i18n="settings.openAtLogin">开机自启</div>
+                    <div class="scard-desc" data-i18n="settings.openAtLoginDesc">登录系统时自动启动 Grok Desktop（打包安装后更可靠）</div>
+                  </div>
+                  <input type="checkbox" id="set-open-at-login" class="toggle" />
+                </div>
+                <div class="scard-row">
+                  <div>
+                    <div class="scard-title" data-i18n="settings.checkUpdates">启动时检查更新</div>
+                    <div class="scard-desc" data-i18n="settings.checkUpdatesDesc">向 GitHub 查询是否有新版本（仅提示，不自动安装）</div>
+                  </div>
+                  <input type="checkbox" id="set-check-updates" class="toggle" />
+                </div>
+              </div>
+              <div class="scard">
+                <div class="scard-head" data-i18n="settings.shortcuts">常用快捷键</div>
+                <div class="shortcut-list">
+                  <div><kbd>Enter</kbd><span data-i18n="sc.enter">发送 / 任务中排队</span></div>
+                  <div><kbd>Shift</kbd>+<kbd>Enter</kbd><span data-i18n="sc.shiftEnter">换行</span></div>
+                  <div><span class="kbd-txt">引导</span><span data-i18n="sc.guide">打断并立刻发送纠正</span></div>
+                  <div><kbd>P</kbd><span data-i18n="sc.plan">打开 / 关闭计划面板</span></div>
+                  <div><kbd>N</kbd><span data-i18n="sc.n">新对话（焦点不在输入框时）</span></div>
+                  <div><kbd>Ctrl</kbd>+<kbd>Tab</kbd><span data-i18n="sc.tab">切换已打开会话</span></div>
+                  <div><kbd>/</kbd><span data-i18n="sc.slash">斜杠命令</span></div>
+                </div>
+              </div>
+            </div>
+
+            <div class="settings-panel" id="panel-appearance" data-panel="appearance">
+              <h1 data-i18n="settings.appearance">外观</h1>
+              <p class="settings-lead" data-i18n="settings.appearanceLead">界面密度、聊天背景</p>
+              <div class="scard">
+                <div class="scard-row">
+                  <div>
+                    <div class="scard-title" data-i18n="settings.density">界面密度</div>
+                    <div class="scard-desc" data-i18n="settings.densityDesc">紧凑模式减少间距，一屏显示更多内容</div>
+                  </div>
+                  <select id="set-density">
+                    <option value="comfortable" data-i18n="settings.density.comfortable">舒适</option>
+                    <option value="compact" data-i18n="settings.density.compact">紧凑</option>
+                  </select>
+                </div>
+              </div>
+              <div class="scard">
+                <div class="scard-row">
+                  <div>
+                    <div class="scard-title" data-i18n="settings.uiScale">界面缩放</div>
+                    <div class="scard-desc" data-i18n="settings.uiScaleDesc">适配 1080p / 2K / 4K；自动按屏幕与 DPI 选择</div>
+                  </div>
+                  <select id="set-ui-scale">
+                    <option value="auto" data-i18n="settings.uiScale.auto">自动</option>
+                    <option value="100" data-i18n="settings.uiScale.100">100%</option>
+                    <option value="110" data-i18n="settings.uiScale.110">110%</option>
+                    <option value="125" data-i18n="settings.uiScale.125">125%</option>
+                    <option value="150" data-i18n="settings.uiScale.150">150%</option>
+                  </select>
+                </div>
+                <div class="scard-row" style="border-top: 1px solid var(--line-soft); padding-top: 10px; margin-top: 4px;">
+                  <div class="scard-desc" id="ui-scale-hint" data-i18n="settings.uiScaleHint">—</div>
+                </div>
+              </div>
+              <div class="scard">
+                <div class="scard-head" data-i18n="settings.wallpaper">聊天背景</div>
+                <div class="scard-pad">
+                  <p class="scard-desc scard-desc-block" data-i18n="settings.wallpaperDesc">只作用于中间对话区，可随时换</p>
+                  <div class="wallpaper-grid" id="wallpaper-grid">
+                    <button type="button" class="wp-swatch active" data-wp="none" title="默认">无</button>
+                    <button type="button" class="wp-swatch wp-aurora" data-wp="aurora" title="极光"></button>
+                    <button type="button" class="wp-swatch wp-ember" data-wp="ember" title="余烬"></button>
+                    <button type="button" class="wp-swatch wp-ocean" data-wp="ocean" title="深海"></button>
+                    <button type="button" class="wp-swatch wp-mist" data-wp="mist" title="薄雾"></button>
+                    <button type="button" class="wp-swatch wp-custom" data-wp="custom" title="自选图片">图</button>
+                  </div>
+                </div>
+                <div class="scard-row">
+                  <div>
+                    <div class="scard-title" data-i18n="settings.wallpaperDim">背景压暗</div>
+                    <div class="scard-desc" data-i18n="settings.wallpaperDimDesc">越大字越清晰</div>
+                  </div>
+                  <div class="wp-dim-wrap">
+                    <input type="range" id="set-wallpaper-dim" min="0" max="80" value="45" />
+                    <span id="set-wallpaper-dim-val">45</span>
+                  </div>
+                </div>
+                <div class="scard-row">
+                  <div>
+                    <div class="scard-title" data-i18n="settings.wallpaperCustom">自选图片</div>
+                    <div class="scard-desc" id="wallpaper-custom-label">未选择</div>
+                  </div>
+                  <button type="button" class="btn" id="btn-wallpaper-pick" data-i18n="settings.wallpaperPick">选择图片</button>
+                </div>
+              </div>
+            </div>
+
+            <div class="settings-panel" id="panel-model" data-panel="model">
+              <h1 data-i18n="settings.model">模型</h1>
+              <p class="settings-lead" data-i18n="settings.modelLead">默认模型（也可在对话输入框旁随时切换）</p>
+              <div class="scard">
+                <div class="scard-row">
+                  <div>
+                    <div class="scard-title" data-i18n="settings.defaultModel">默认模型</div>
+                    <div class="scard-desc" data-i18n="settings.defaultModelDesc">新会话默认使用的模型</div>
+                  </div>
+                  <select id="set-model"></select>
+                </div>
+              </div>
+            </div>
+
+            <div class="settings-panel" id="panel-memory" data-panel="memory">
+              <h1 data-i18n="settings.memory">记忆</h1>
+              <p class="settings-lead" data-i18n="settings.memoryLead">跨会话记住项目约定与偏好</p>
+              <div class="scard">
+                <div class="scard-row">
+                  <div>
+                    <div class="scard-title" data-i18n="settings.memoryEnable">启用跨会话记忆</div>
+                    <div class="scard-desc" data-i18n="settings.memoryEnableDesc">开启后新连接的 agent 会读取 ~/.grok/memory</div>
+                  </div>
+                  <input type="checkbox" id="set-memory" class="toggle" />
+                </div>
+              </div>
+              <button type="button" class="btn" id="settings-goto-memory" data-i18n="settings.openMemory">打开记忆管理 →</button>
+            </div>
+
+            <div class="settings-panel" id="panel-permissions" data-panel="permissions">
+              <h1 data-i18n="settings.permissions">权限</h1>
+              <p class="settings-lead" data-i18n="settings.permissionsLead">控制助手访问本机文件与命令的方式</p>
+              <div class="scard">
+                <div class="scard-head" data-i18n="settings.accessMode">访问模式</div>
+                <div class="scard-pad">
+                  <p class="scard-desc scard-desc-block" data-i18n="settings.accessModeDesc">一键切换审批强度，更像可上线产品的安全策略</p>
+                  <div class="mode-cards" id="access-mode-cards" role="radiogroup" aria-label="访问模式">
+                    <button type="button" class="mode-card" data-mode="safe" role="radio" aria-checked="false">
+                      <div class="mode-card-top">
+                        <span class="mode-card-ico">🛡</span>
+                        <span class="mode-card-title" data-i18n="access.safe">审批模式</span>
+                      </div>
+                      <p class="mode-card-desc" data-i18n="access.safeDesc">写文件、跑命令前需要你确认。最安全，适合陌生仓库。</p>
+                    </button>
+                    <button type="button" class="mode-card recommended" data-mode="balanced" role="radio" aria-checked="false">
+                      <div class="mode-card-top">
+                        <span class="mode-card-ico">✦</span>
+                        <span class="mode-card-title" data-i18n="access.balanced">智能模式</span>
+                        <span class="mode-pill">Recommended</span>
+                      </div>
+                      <p class="mode-card-desc" data-i18n="access.balancedDesc">常规工具自动放行，高风险操作仍会提示。推荐日常使用。</p>
+                    </button>
+                    <button type="button" class="mode-card" data-mode="full" role="radio" aria-checked="false">
+                      <div class="mode-card-top">
+                        <span class="mode-card-ico">⚡</span>
+                        <span class="mode-card-title" data-i18n="access.full">完全访问</span>
+                      </div>
+                      <p class="mode-card-desc" data-i18n="access.fullDesc">工具默认自动批准，效率最高。仅建议在可信本机项目使用。</p>
+                    </button>
+                  </div>
+                </div>
+                <div class="scard-row" id="yolo-row">
+                  <div>
+                    <div class="scard-title" data-i18n="access.yolo">YOLO 全自动</div>
+                    <div class="scard-desc" data-i18n="access.yoloDesc">更激进的自动执行（有风险，仅限完全信任的环境）</div>
+                  </div>
+                  <input type="checkbox" id="set-yolo" class="toggle" />
+                </div>
+              </div>
+              <!-- legacy hidden fields kept for save pipeline -->
+              <input type="hidden" id="set-permission" value="always-approve" />
+              <input type="hidden" id="set-auto-approve" value="1" />
+            </div>
+
+            <div class="settings-panel" id="panel-skills" data-panel="skills">
+              <h1>Skills</h1>
+              <p class="settings-lead">本机已发现的 Skills（对话中键入 / 可调用）</p>
+              <div id="settings-skills-list" class="embed-list"></div>
+            </div>
+
+            <div class="settings-panel" id="panel-plugins" data-panel="plugins">
+              <h1>插件</h1>
+              <p class="settings-lead">已安装插件（真实 grok plugin list）</p>
+              <div id="settings-plugins-list" class="embed-list"></div>
+              <div class="install-bar" style="padding:12px 0 0">
+                <input id="settings-plugin-spec" type="text" placeholder="owner/repo 或 git URL" />
+                <button type="button" id="settings-plugin-install" class="btn primary">安装</button>
+              </div>
+            </div>
+
+            <div class="settings-panel" id="panel-mcp" data-panel="mcp">
+              <h1>MCP 服务器</h1>
+              <p class="settings-lead">真实 `grok mcp list` 结果</p>
+              <div id="settings-mcp-list" class="embed-list"></div>
+              <div class="install-bar" style="padding:12px 0 0;display:flex;gap:8px;flex-wrap:wrap">
+                <input id="mcp-name" type="text" placeholder="名称" style="width:100px" />
+                <input id="mcp-cmd" type="text" placeholder="命令，如 npx -y @modelcontextprotocol/server-filesystem" style="flex:1" />
+                <button type="button" id="mcp-add" class="btn primary">添加</button>
+                <button type="button" id="mcp-doctor" class="btn">诊断</button>
+              </div>
+              <pre id="mcp-doctor-out" class="embed-pre hidden"></pre>
+            </div>
+
+            <div class="settings-panel" id="panel-about" data-panel="about">
+              <h1 data-i18n="settings.about">环境</h1>
+              <p class="settings-lead" data-i18n="settings.aboutLead">开发者信息、本机路径、CLI 与更新</p>
+
+              <!-- 开发者信息（来自 src/brand.js） -->
+              <div class="scard developer-card">
+                <div class="developer-hero">
+                  <div class="developer-avatar" aria-hidden="true" id="dev-avatar-letter">罗</div>
+                  <div class="developer-meta">
+                    <div class="developer-name" id="dev-product-name">Grok Desktop</div>
+                    <div class="developer-author" id="dev-author-name">罗方磊</div>
+                    <a class="developer-handle" id="dev-github-profile" href="#" data-url="https://github.com/luofanglei1-ctrl">@luofanglei1-ctrl</a>
+                    <p class="developer-email">
+                      <a id="dev-email" href="mailto:1551180125@qq.com">1551180125@qq.com</a>
+                    </p>
+                    <p class="developer-thanks" id="dev-thanks" data-i18n="developer.thanks">
+                      欢迎使用本桌面版。有问题可通过 GitHub Issues 或邮件联系。
+                    </p>
+                  </div>
+                </div>
+                <div class="developer-actions">
+                  <button type="button" class="btn ghost" id="btn-dev-feedback" data-url="https://github.com/luofanglei1-ctrl/grok-desktop/issues">
+                    <span class="dev-btn-ico" aria-hidden="true">💬</span>
+                    <span data-i18n="developer.feedback">反馈问题</span>
+                  </button>
+                  <button type="button" class="btn ghost" id="btn-dev-email" data-url="mailto:1551180125@qq.com">
+                    <span class="dev-btn-ico" aria-hidden="true">✉</span>
+                    <span data-i18n="developer.email">发邮件</span>
+                  </button>
+                </div>
+                <div class="developer-links">
+                  <button type="button" class="dev-link" id="btn-dev-repo" data-url="https://github.com/luofanglei1-ctrl/grok-desktop">
+                    <span data-i18n="developer.repo">项目仓库</span>
+                    <code id="dev-repo-code">luofanglei1-ctrl/grok-desktop</code>
+                  </button>
+                  <button type="button" class="dev-link" id="btn-dev-releases" data-url="https://github.com/luofanglei1-ctrl/grok-desktop/releases">
+                    <span data-i18n="developer.releases">版本发布</span>
+                    <code>Releases</code>
+                  </button>
+                </div>
+              </div>
+
+              <div class="scard about-card">
+                <div class="path-row"><span>Desktop</span><code id="set-desktop-ver">—</code></div>
+                <div class="path-row"><span>作者</span><code id="set-author">—</code></div>
+                <div class="path-row"><span>邮箱</span><code id="set-author-email">—</code></div>
+                <div class="path-row"><span>GROK_HOME</span><code id="set-grok-home">—</code></div>
+                <div class="path-row"><span>CLI</span><code id="set-cli">—</code></div>
+                <div class="path-row"><span>config.toml</span><code id="set-config-path">—</code></div>
+              </div>
+              <div class="scard">
+                <div class="scard-row">
+                  <div>
+                    <div class="scard-title" data-i18n="settings.checkUpdate">检查更新</div>
+                    <div class="scard-desc" id="update-check-desc" data-i18n="settings.checkUpdateDesc">查询 GitHub 最新 Release</div>
+                  </div>
+                  <button type="button" class="btn" id="btn-check-update">Check</button>
+                </div>
+                <div class="scard-row">
+                  <div>
+                    <div class="scard-title" data-i18n="settings.diagnose">重新检测环境</div>
+                    <div class="scard-desc" data-i18n="settings.diagnoseDesc">CLI 是否安装、是否已登录</div>
+                  </div>
+                  <button type="button" class="btn" id="btn-run-diagnose">Diagnose</button>
+                </div>
+              </div>
+              <div class="scard">
+                <div class="scard-row">
+                  <div>
+                    <div class="scard-title" data-i18n="settings.usage">额度 / 账单</div>
+                    <div class="scard-desc" data-i18n="settings.usageDesc">执行真实 /usage，查看额度与用量</div>
+                  </div>
+                  <button type="button" class="btn" id="btn-run-usage">/usage</button>
+                </div>
+                <div class="scard-row">
+                  <div>
+                    <div class="scard-title" data-i18n="settings.context">上下文用量</div>
+                    <div class="scard-desc" data-i18n="settings.contextDesc">执行 /context，查看窗口占用与统计</div>
+                  </div>
+                  <button type="button" class="btn" id="btn-run-context">/context</button>
+                </div>
+                <div class="scard-row">
+                  <div>
+                    <div class="scard-title" data-i18n="settings.compact">压缩上下文</div>
+                    <div class="scard-desc" data-i18n="settings.compactDesc">执行 /compact，压缩历史以节省上下文</div>
+                  </div>
+                  <button type="button" class="btn" id="btn-run-compact">/compact</button>
+                </div>
+                <div class="scard-row">
+                  <div>
+                    <div class="scard-title" data-i18n="settings.sessionInfo">会话信息</div>
+                    <div class="scard-desc" data-i18n="settings.sessionInfoDesc">执行 /session-info（模型、轮次等）</div>
+                  </div>
+                  <button type="button" class="btn" id="btn-run-session-info">/session-info</button>
+                </div>
+              </div>
+            </div>
+
+            <div class="settings-footer">
+              <p class="hint" id="settings-msg"></p>
+              <button type="button" id="btn-settings-save" class="btn primary" data-i18n="settings.save">保存更改</button>
+            </div>
+          </section>
+        </div>
+
+      </main>
+    </div>
+
+    <!-- ===== Bootstrap overlay surfaces (fixed — never reflow #app) ===== -->
+
+    <!-- Toast host -->
+    <div id="toast-host" class="toast-container position-fixed top-0 end-0 p-3" style="z-index: 11000" aria-live="polite"></div>
+
+    <!-- Permission floating cards -->
+    <div id="perm-layer" class="perm-layer d-none" aria-live="assertive"></div>
+
+    <!-- App Modal (prompt / confirm) -->
+    <div class="modal fade" id="app-modal" tabindex="-1" aria-labelledby="app-modal-title" aria-hidden="true">
+      <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+          <div class="modal-header border-secondary-subtle">
+            <h5 class="modal-title" id="app-modal-title">提示</h5>
+            <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close" id="app-modal-x"></button>
+          </div>
+          <div class="modal-body">
+            <p id="app-modal-msg" class="text-secondary mb-3"></p>
+            <div id="app-modal-input-wrap" class="mb-0">
+              <input id="app-modal-input" class="form-control form-control-sm" type="text" autocomplete="off" />
+            </div>
+          </div>
+          <div class="modal-footer border-secondary-subtle">
+            <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-dismiss="modal" id="app-modal-cancel">取消</button>
+            <button type="button" class="btn btn-primary btn-sm" id="app-modal-ok">确定</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Setup Modal -->
+    <div class="modal fade" id="setup-modal" tabindex="-1" aria-labelledby="setup-modal-title" aria-hidden="true" data-bs-backdrop="static" data-bs-keyboard="false">
+      <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+          <div class="modal-header border-secondary-subtle">
+            <h5 class="modal-title" id="setup-modal-title" data-i18n="setup.title">欢迎使用 Grok 桌面版</h5>
+          </div>
+          <div class="modal-body">
+            <p class="text-secondary small" data-i18n="setup.lead">使用前请确认本机官方 CLI 与登录状态</p>
+            <ul id="setup-checks" class="setup-checks list-unstyled mb-3"></ul>
+            <p id="setup-hint" class="setup-hint small text-body-secondary mb-0"></p>
+          </div>
+          <div class="modal-footer border-secondary-subtle">
+            <button type="button" class="btn btn-outline-secondary btn-sm" id="setup-recheck" data-i18n="setup.recheck">重新检测</button>
+            <button type="button" class="btn btn-outline-secondary btn-sm" id="setup-open-cli-doc" data-i18n="setup.cliDoc">CLI 安装说明</button>
+            <button type="button" class="btn btn-primary btn-sm" id="setup-continue" data-i18n="setup.continue">进入应用</button>
+          </div>
+        </div>
+      </div>
+    </div>
+    <!-- alias id for legacy JS that looks up setup-overlay -->
+    <div id="setup-overlay" class="d-none" aria-hidden="true"></div>
+
+    <!-- Update banner (fixed toast strip) -->
+    <div id="update-banner" class="update-banner d-none" role="status">
+      <span id="update-banner-text">发现新版本</span>
+      <button type="button" class="btn btn-primary btn-sm" id="update-banner-open" data-i18n="update.view">查看</button>
+      <button type="button" class="btn btn-outline-secondary btn-sm" id="update-banner-dismiss" data-i18n="update.dismiss">关闭</button>
+    </div>
+
+    <!-- Lightbox Modal -->
+    <div class="modal fade" id="lightbox-modal" tabindex="-1" aria-hidden="true">
+      <div class="modal-dialog modal-dialog-centered modal-xl">
+        <div class="modal-content bg-transparent border-0 shadow-none">
+          <div class="modal-body p-0 text-center">
+            <img id="lightbox-img" class="img-fluid rounded-3 shadow" alt="" style="max-height: 88vh; cursor: zoom-out" data-bs-dismiss="modal" />
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Goal Offcanvas (official /goal mode status) -->
+    <div
+      class="offcanvas offcanvas-end text-bg-dark"
+      tabindex="-1"
+      id="goal-offcanvas"
+      aria-labelledby="goal-offcanvas-label"
+    >
+      <div class="offcanvas-header border-secondary-subtle">
+        <div>
+          <h5 class="offcanvas-title mb-0" id="goal-offcanvas-label" data-i18n="goal.panelTitle">目标模式</h5>
+          <span class="small text-secondary" id="goal-panel-status">—</span>
+        </div>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="offcanvas" aria-label="Close"></button>
+      </div>
+      <div class="offcanvas-body">
+        <p class="small text-secondary mb-1" data-i18n="goal.objective">目标</p>
+        <p id="goal-panel-objective" class="goal-panel-objective mb-3">—</p>
+        <div class="mb-3">
+          <div class="d-flex justify-content-between small text-secondary mb-1">
+            <span data-i18n="goal.progress">进度</span>
+            <span id="goal-panel-progress-label">0/0</span>
+          </div>
+          <div class="progress" style="height: 6px">
+            <div id="goal-panel-progress" class="progress-bar bg-primary" role="progressbar" style="width: 0%"></div>
+          </div>
+        </div>
+        <dl class="row small goal-panel-meta mb-3">
+          <dt class="col-5 text-secondary">阶段</dt>
+          <dd class="col-7" id="goal-panel-phase">—</dd>
+          <dt class="col-5 text-secondary">耗时</dt>
+          <dd class="col-7" id="goal-panel-elapsed">—</dd>
+          <dt class="col-5 text-secondary">Token</dt>
+          <dd class="col-7" id="goal-panel-tokens">—</dd>
+          <dt class="col-5 text-secondary">事件</dt>
+          <dd class="col-7" id="goal-panel-event">—</dd>
+        </dl>
+        <p id="goal-panel-pause" class="small text-warning d-none mb-3"></p>
+        <div class="d-flex flex-wrap gap-2">
+          <button type="button" class="btn btn-outline-secondary btn-sm" id="goal-btn-pause" data-i18n="goal.pause">暂停</button>
+          <button type="button" class="btn btn-primary btn-sm" id="goal-btn-resume" data-i18n="goal.resume">恢复</button>
+          <button type="button" class="btn btn-outline-danger btn-sm" id="goal-btn-clear" data-i18n="goal.clear">清除</button>
+        </div>
+        <p class="small text-secondary mt-3 mb-0" data-i18n="goal.hint">
+          官方命令：/goal &lt;目标&gt; · /goal pause · /goal resume · /goal status · /goal clear
+        </p>
+      </div>
+    </div>
+
+    <!-- Plan Offcanvas (right drawer — no layout shift) -->
+    <div
+      class="offcanvas offcanvas-end text-bg-dark"
+      tabindex="-1"
+      id="plan-offcanvas"
+      aria-labelledby="plan-offcanvas-label"
+    >
+      <div class="offcanvas-header border-secondary-subtle">
+        <div>
+          <h5 class="offcanvas-title mb-0" id="plan-offcanvas-label" data-i18n="chat.planTitle">执行计划</h5>
+          <span class="plan-progress small text-secondary hidden" id="plan-progress"></span>
+        </div>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="offcanvas" id="btn-plan-close" aria-label="Close"></button>
+      </div>
+      <div class="offcanvas-body p-0">
+        <div id="plan-list" class="plan-list p-3">
+          <div class="plan-empty text-secondary small" data-i18n="chat.planEmpty">尚无计划条目。助手进入计划模式后会出现在这里。</div>
+        </div>
+      </div>
+    </div>
+    <!-- legacy alias so ui.planPanel still resolves -->
+    <div id="plan-panel" class="d-none" aria-hidden="true"></div>
+
+    <!-- Session context menu (fixed dropdown menu) -->
+    <div id="session-ctx" class="dropdown-menu dropdown-menu-dark shadow d-none" role="menu" aria-label="会话菜单">
+      <button type="button" class="dropdown-item" data-act="open" role="menuitem">打开</button>
+      <button type="button" class="dropdown-item" data-act="rename" role="menuitem">重命名</button>
+      <div class="dropdown-divider"></div>
+      <button type="button" class="dropdown-item text-danger" data-act="delete" role="menuitem">删除</button>
+    </div>
+
+    <script src="vendor/bootstrap/bootstrap.bundle.min.js"></script>
+    <script src="ui-overlay.js"></script>
+    <script src="i18n.js"></script>
+    <script src="app.js"></script>
+  </body>
+</html>
