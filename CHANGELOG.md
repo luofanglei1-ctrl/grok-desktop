@@ -6,7 +6,30 @@
 
 仓库：https://github.com/luofanglei1-ctrl/grok-desktop
 
-> **GitHub Release 正文：** [docs/RELEASE_v1.0.2.md](./docs/RELEASE_v1.0.2.md) · [docs/RELEASE_v1.0.1.md](./docs/RELEASE_v1.0.1.md)
+> **GitHub Release 正文：** [docs/RELEASE_v1.0.3.md](./docs/RELEASE_v1.0.3.md) · [docs/RELEASE_v1.0.2.md](./docs/RELEASE_v1.0.2.md)
+
+---
+
+## [1.0.3] — 2026-07-22
+
+### 新增
+
+- **深色 / 普通（浅色）主题切换**（设置 → 外观），颜色 token 抽离，即时生效并持久化。
+- **上下文窗口用量条**（对话顶栏）：按**当前模型 context 窗口**估算占用百分比与 token。
+- **自动压缩**：达到 CLI 阈值（默认模型窗口的 **85%**，非固定 2M）时自动执行 `/compact`。
+- **手动压缩**：顶栏「压缩」、可选保留说明；静默调用，不往对话插入 `/compact` 消息。
+- 思考过程完整展示（可折叠块）；聊天长文折叠优化。
+- 统一 UI 滚动条（无箭头、圆角）；浅色主题选中态/对话卡片样式优化。
+
+### 变更
+
+- 版本号 **1.0.3**。
+- 系统指令（compact / context 等）改为静默调用。
+
+### 安装包
+
+- `Grok-Desktop-1.0.3-Windows-Setup-x64.exe`
+- `Grok-Desktop-1.0.3-Windows-Portable-x64.exe`
 
 ---
 
@@ -79,6 +102,7 @@
 
 ---
 
+[1.0.3]: https://github.com/luofanglei1-ctrl/grok-desktop/releases/tag/v1.0.3
 [1.0.2]: https://github.com/luofanglei1-ctrl/grok-desktop/releases/tag/v1.0.2
 [1.0.1]: https://github.com/luofanglei1-ctrl/grok-desktop/releases/tag/v1.0.1
 
