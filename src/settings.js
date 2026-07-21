@@ -31,6 +31,12 @@ const DEFAULT_DESKTOP = {
   notifyOnDone: true,
   /** 开机自启（登录时启动） */
   openAtLogin: false,
+  /**
+   * 点击窗口关闭按钮的行为
+   * tray = 最小化到系统托盘（默认）
+   * quit = 直接退出应用
+   */
+  closeBehavior: "tray",
   /** 启动时检查 GitHub 更新 */
   checkUpdates: true,
   /** 是否已完成首次环境引导 */

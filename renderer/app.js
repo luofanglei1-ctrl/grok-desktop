@@ -127,6 +127,8 @@ let desktopSettings = {
   wallpaperDim: 45,
   notifyOnDone: true,
   openAtLogin: false,
+  /** tray | quit — window close button behavior */
+  closeBehavior: "tray",
   checkUpdates: true,
   setupDismissed: false,
   locale: "zh",
@@ -4984,6 +4986,10 @@ async function loadSettings() {
     if ($("set-enter-send")) $("set-enter-send").checked = desktopSettings.enterToSend !== false;
     if ($("set-notify-done")) $("set-notify-done").checked = desktopSettings.notifyOnDone !== false;
     if ($("set-open-at-login")) $("set-open-at-login").checked = !!desktopSettings.openAtLogin;
+    if ($("set-close-behavior")) {
+      $("set-close-behavior").value =
+        desktopSettings.closeBehavior === "quit" ? "quit" : "tray";
+    }
     if ($("set-check-updates")) $("set-check-updates").checked = desktopSettings.checkUpdates !== false;
     // Sync checkbox with actual OS login item when available
     void (async () => {
@@ -5355,11 +5361,14 @@ $("btn-settings-save")?.addEventListener("click", async () => {
     const locale = $("set-locale")?.value === "en" ? "en" : "zh";
 
     const openAtLogin = !!$("set-open-at-login")?.checked;
+    const closeBehavior =
+      $("set-close-behavior")?.value === "quit" ? "quit" : "tray";
     desktopSettings = await grokDesktop.saveDesktopSettings({
       showThinking: !!$("set-show-thinking")?.checked,
       enterToSend: !!$("set-enter-send")?.checked,
       notifyOnDone: !!$("set-notify-done")?.checked,
       openAtLogin,
+      closeBehavior,
       checkUpdates: !!$("set-check-updates")?.checked,
       density: $("set-density")?.value || "comfortable",
       uiScale: $("set-ui-scale")?.value || "auto",

@@ -6,6 +6,8 @@ const {
   shell,
   Menu,
   Notification,
+  Tray,
+  nativeImage,
   net,
   screen,
 } = require("electron");
@@ -106,7 +108,117 @@ function mediaForRenderer(media) {
   return media;
 }
 
-const APP_ICON = path.join(__dirname, "assets", "icon.png");
+// Prefer .ico on Windows (taskbar / window), PNG elsewhere — all from assets/
+const APP_ICON = (() => {
+  const ico = path.join(__dirname, "assets", "icon.ico");
+  const png = path.join(__dirname, "assets", "icon.png");
+  if (process.platform === "win32" && fs.existsSync(ico)) return ico;
+  if (fs.existsSync(png)) return png;
+  if (fs.existsSync(ico)) return ico;
+  return undefined;
+})();
+
+/** @type {import('electron').Tray | null} */
+let appTray = null;
+/** When true, next close really quits (from tray menu / app.quit) */
+let isQuitting = false;
+
+/**
+ * closeBehavior from desktop settings:
+ * - "tray" (default): window close → hide to system tray
+ * - "quit": window close → exit app
+ */
+function getCloseBehavior() {
+  try {
+    const desk = settings.readDesktopSettings();
+    const v = String(desk.closeBehavior || "tray").toLowerCase();
+    return v === "quit" ? "quit" : "tray";
+  } catch {
+    return "tray";
+  }
+}
+
+function showMainWindow() {
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    createWindow();
+    return;
+  }
+  if (mainWindow.isMinimized()) mainWindow.restore();
+  mainWindow.show();
+  mainWindow.focus();
+}
+
+function hideToTray() {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  mainWindow.hide();
+  // Optional balloon once (Windows)
+  try {
+    if (appTray && process.platform === "win32") {
+      appTray.displayBalloon?.({
+        title: "Grok Desktop",
+        content: "已最小化到托盘。右键图标可退出。",
+        iconType: "info",
+      });
+    }
+  } catch {
+    /* ignore */
+  }
+}
+
+function createTray() {
+  if (appTray) return appTray;
+  let image = null;
+  try {
+    if (APP_ICON && fs.existsSync(APP_ICON)) {
+      image = nativeImage.createFromPath(APP_ICON);
+      if (process.platform === "win32" && !image.isEmpty()) {
+        // Tray looks better at 16/32
+        const size = image.getSize();
+        if (size.width > 32) {
+          image = image.resize({ width: 16, height: 16 });
+        }
+      }
+    }
+  } catch {
+    image = null;
+  }
+  if (!image || image.isEmpty()) {
+    // 1x1 fallback so Tray still works
+    image = nativeImage.createEmpty();
+  }
+  appTray = new Tray(image);
+  appTray.setToolTip("Grok Desktop");
+  const contextMenu = Menu.buildFromTemplate([
+    {
+      label: "显示主窗口",
+      click: () => showMainWindow(),
+    },
+    { type: "separator" },
+    {
+      label: "退出",
+      click: () => {
+        isQuitting = true;
+        app.quit();
+      },
+    },
+  ]);
+  appTray.setContextMenu(contextMenu);
+  appTray.on("double-click", () => showMainWindow());
+  appTray.on("click", () => {
+    // Windows: single click show
+    if (process.platform === "win32") showMainWindow();
+  });
+  return appTray;
+}
+
+function destroyTray() {
+  try {
+    appTray?.destroy();
+  } catch {
+    /* ignore */
+  }
+  appTray = null;
+}
 
 /** Primary display metrics for layout / UI-scale decisions in the renderer. */
 function getDisplayInfoPayload() {
@@ -172,6 +284,8 @@ function createWindow() {
     icon: fs.existsSync(APP_ICON) ? APP_ICON : undefined,
     backgroundColor: "#0b0b0c",
     show: false,
+    // No default Electron menu bar (File/Edit/View…)
+    autoHideMenuBar: true,
     titleBarStyle: process.platform === "darwin" ? "hiddenInset" : "default",
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),
@@ -182,8 +296,38 @@ function createWindow() {
     },
   });
 
-  mainWindow.once("ready-to-show", () => mainWindow.show());
+  // Remove top menu bar: File / Edit / View / Window / Help
+  try {
+    Menu.setApplicationMenu(null);
+    if (typeof mainWindow.setMenu === "function") {
+      mainWindow.setMenu(null);
+    }
+    mainWindow.setMenuBarVisibility(false);
+    mainWindow.setAutoHideMenuBar(true);
+  } catch (err) {
+    log(`remove menu bar: ${err.message}`);
+  }
+
+  mainWindow.once("ready-to-show", () => {
+    try {
+      Menu.setApplicationMenu(null);
+      if (typeof mainWindow.setMenu === "function") mainWindow.setMenu(null);
+      mainWindow.setMenuBarVisibility(false);
+    } catch {
+      /* ignore */
+    }
+    mainWindow.show();
+  });
   mainWindow.loadFile(path.join(__dirname, "renderer", "index.html"));
+
+  // Close button: tray (default) or quit — from settings.closeBehavior
+  mainWindow.on("close", (e) => {
+    if (isQuitting) return;
+    if (getCloseBehavior() === "quit") return; // allow default close → quit
+    e.preventDefault();
+    hideToTray();
+  });
+
   mainWindow.on("closed", () => {
     mainWindow = null;
   });
@@ -495,17 +639,36 @@ app.whenReady().then(() => {
   } catch {
     /* ignore */
   }
+  // Remove default top menu before first window (File/Edit/View…)
+  try {
+    Menu.setApplicationMenu(null);
+  } catch {
+    /* ignore */
+  }
+  createTray();
   createWindow();
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
+    else showMainWindow();
   });
 });
 
-app.on("window-all-closed", () => {
+app.on("window-all-closed", (e) => {
+  // With tray close, window hide does not fire all-closed the same way;
+  // only quit when user chose quit or tray Exit.
+  if (process.platform === "darwin") return;
+  if (!isQuitting && getCloseBehavior() === "tray") {
+    // Keep process alive for tray
+    return;
+  }
   disposeAllAgents();
   if (process.platform !== "darwin") app.quit();
 });
-app.on("before-quit", () => disposeAllAgents());
+app.on("before-quit", () => {
+  isQuitting = true;
+  destroyTray();
+  disposeAllAgents();
+});
 
 // ── Sessions ───────────────────────────────────────────
 

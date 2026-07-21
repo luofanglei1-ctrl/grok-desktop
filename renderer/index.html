@@ -478,6 +478,16 @@
                 </div>
                 <div class="scard-row">
                   <div>
+                    <div class="scard-title" data-i18n="settings.closeBehavior">关闭窗口时</div>
+                    <div class="scard-desc" data-i18n="settings.closeBehaviorDesc">默认最小化到托盘；右键托盘图标可退出</div>
+                  </div>
+                  <select id="set-close-behavior" class="form-select form-select-sm" style="max-width: 11rem">
+                    <option value="tray" data-i18n="settings.closeBehavior.tray">最小化到托盘</option>
+                    <option value="quit" data-i18n="settings.closeBehavior.quit">直接退出</option>
+                  </select>
+                </div>
+                <div class="scard-row">
+                  <div>
                     <div class="scard-title" data-i18n="settings.checkUpdates">启动时检查更新</div>
                     <div class="scard-desc" data-i18n="settings.checkUpdatesDesc">向 GitHub 查询是否有新版本（仅提示，不自动安装）</div>
                   </div>

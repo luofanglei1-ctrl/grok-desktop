@@ -1,6 +1,6 @@
 {
   "name": "grok-desktop",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "Cross-platform Grok Build desktop shell for Windows and Linux",
   "main": "main.js",
   "author": {
@@ -53,6 +53,7 @@
     "extraMetadata": {
       "main": "main.js"
     },
+    "icon": "assets/icon.png",
     "linux": {
       "target": [
         {
@@ -110,7 +111,10 @@
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": "always",
       "createStartMenuShortcut": true,
-      "shortcutName": "Grok Desktop"
+      "shortcutName": "Grok Desktop",
+      "installerIcon": "assets/icon.ico",
+      "uninstallerIcon": "assets/icon.ico",
+      "installerHeaderIcon": "assets/icon.ico"
     },
     "portable": {
       "artifactName": "Grok-Desktop-${version}-Windows-Portable-x64.exe"

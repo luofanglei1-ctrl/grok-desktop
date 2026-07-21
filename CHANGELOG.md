@@ -6,7 +6,27 @@
 
 仓库：https://github.com/luofanglei1-ctrl/grok-desktop
 
-> **GitHub Release 正文（可复制）：** [docs/RELEASE_v1.0.1.md](./docs/RELEASE_v1.0.1.md)
+> **GitHub Release 正文：** [docs/RELEASE_v1.0.2.md](./docs/RELEASE_v1.0.2.md) · [docs/RELEASE_v1.0.1.md](./docs/RELEASE_v1.0.1.md)
+
+---
+
+## [1.0.2] — 2026-07-21
+
+### 新增
+
+- **关闭窗口行为**：默认点击 × 最小化到系统托盘；设置中可改为「直接退出」。
+- **托盘菜单**：右键托盘图标 → 显示主窗口 / 退出。
+- 打包图标明确使用 `assets/icon.ico` / `icon.png`（含安装程序图标）。
+
+### 变更
+
+- 版本号 **1.0.2**。
+- 移除顶部 File / Edit / View / Window / Help 菜单栏。
+
+### 安装包
+
+- `Grok-Desktop-1.0.2-Windows-Setup-x64.exe`
+- `Grok-Desktop-1.0.2-Windows-Portable-x64.exe`
 
 ---
 
@@ -59,5 +79,6 @@
 
 ---
 
+[1.0.2]: https://github.com/luofanglei1-ctrl/grok-desktop/releases/tag/v1.0.2
 [1.0.1]: https://github.com/luofanglei1-ctrl/grok-desktop/releases/tag/v1.0.1
 
