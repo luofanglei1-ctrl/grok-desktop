@@ -341,14 +341,21 @@ Auth stays with the official CLI. Desktop settings are local only. Do not use Fu
 
 ---
 
-## Changelog (summary)
+## 版本更新说明 / Changelog
 
-See [CHANGELOG.md](./CHANGELOG.md) for the full list. **1.0.1** highlights:
+| 文档 | 说明 |
+|------|------|
+| [CHANGELOG.md](./CHANGELOG.md) | 完整版本变更记录 |
+| [docs/RELEASE_v1.0.1.md](./docs/RELEASE_v1.0.1.md) | **v1.0.1 GitHub Release 正文**（下载说明 + 亮点 + 升级步骤） |
+| [docs/ABOUT.md](./docs/ABOUT.md) | 维护者与品牌信息 |
 
-- Plus menu (attach + modes), plan mode, goal mode  
-- System done notifications, open-at-login  
-- Multi-resolution layout/type, Bootstrap/GrokUI overlays  
-- Brand / environment page customization  
+### 1.0.1 摘要
+
+- Plus 菜单（附件 + 任务/计划/目标模式）
+- 计划模式、目标模式（对话框直接输入目标）
+- 完成后系统通知、开机自启
+- 多分辨率 / 字号缩放、Bootstrap/GrokUI 浮层
+- 环境页维护者信息（罗方磊 / luofanglei1-ctrl）  
 
 ---
 

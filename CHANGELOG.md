@@ -6,6 +6,10 @@
 
 仓库：https://github.com/luofanglei1-ctrl/grok-desktop
 
+> **GitHub Release 正文（可复制）：** [docs/RELEASE_v1.0.1.md](./docs/RELEASE_v1.0.1.md)
+
+---
+
 ## [1.0.1] — 2026-07-21
 
 ### 新增
@@ -20,7 +24,7 @@
 - **开机自启**：设置中可开启登录时启动（`app.setLoginItemSettings`）。
 - **多分辨率适配**：侧栏 / 内容宽度 / 字号 token 适配 1080p、2K、4K；界面缩放（自动 / 100%–150%）。
 - **浮层组件体系**：Bootstrap 5 + `GrokUI`（Modal / Toast / Offcanvas），弹层不挤占布局。
-- **环境页品牌信息**：`src/brand.js` 配置作者、邮箱、GitHub（当前：罗方磊 / luofanglei1-ctrl）。
+- **环境页品牌信息**：`src/brand.js` 配置作者、邮箱、GitHub（罗方磊 / luofanglei1-ctrl）。
 - 项目 UI 开发 skill：`.grok/skills/grok-desktop-ui/`。
 
 ### 变更
@@ -40,6 +44,11 @@
 - `src/brand.js`、`src/acp.js`（setMode / goal_updated）、`renderer/ui-overlay.js`、`renderer/bootstrap-theme.css`。
 - 依赖：Bootstrap 5（vendored 至 `renderer/vendor/bootstrap/`）。
 
+### 安装包文件名
+
+- `Grok-Desktop-1.0.1-Windows-Setup-x64.exe`
+- `Grok-Desktop-1.0.1-Windows-Portable-x64.exe`
+
 ---
 
 ## [0.8.x] — 历史版本
@@ -51,3 +60,4 @@
 ---
 
 [1.0.1]: https://github.com/luofanglei1-ctrl/grok-desktop/releases/tag/v1.0.1
+
