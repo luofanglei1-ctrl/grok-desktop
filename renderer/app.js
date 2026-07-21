@@ -57,6 +57,10 @@ const ui = {
   stripEffort: $("strip-effort"),
   stripCwd: $("strip-cwd"),
   stripQueue: $("strip-queue"),
+  stripContext: $("strip-context"),
+  stripCtxFill: $("strip-ctx-fill"),
+  stripCtxLabel: $("strip-ctx-label"),
+  btnCompactStrip: $("btn-compact-strip"),
   planPanel: $("plan-offcanvas") || $("plan-panel"),
   planList: $("plan-list"),
   planToggle: $("btn-plan-toggle"),
@@ -93,7 +97,13 @@ const ui = {
 };
 
 const PAGE = 12; // keep DOM light; load earlier on demand
-const CLAMP = 480;
+/**
+ * Chat fold thresholds — long messages collapse by default for readability.
+ * CSS max-height: --clamp-max-h (styles.css)
+ */
+const CLAMP_CHARS = 1800;
+const CLAMP_LINES = 22;
+const CLAMP_HEIGHT_PX = 280; // fallback measure after paint
 /** Soft cap: older tool/diff details stay collapsed & lazy */
 const MAX_OPEN_DIFFS = 1;
 
@@ -129,6 +139,10 @@ let desktopSettings = {
   openAtLogin: false,
   /** tray | quit — window close button behavior */
   closeBehavior: "tray",
+  /** dark | light */
+  theme: "dark",
+  /** Desktop-side auto /compact at threshold % of model context window */
+  autoCompact: true,
   checkUpdates: true,
   setupDismissed: false,
   locale: "zh",
@@ -239,6 +253,12 @@ let seenMedia = new Set();
 let toolCardMap = new Map();
 /** @type {Map<string, HTMLElement>} */
 let diffCardMap = new Map();
+
+/** CLI config: auto compact at this % of model context_window (default 85) */
+let autoCompactThresholdPercent = 85;
+/** Per-session context estimate + compact state */
+// st.contextStats = { used, limit, pct, modelId }
+// st.compacting = boolean
 /** @type {Array<object>} */
 let slashCommands = [];
 let slashFiltered = [];
@@ -630,6 +650,12 @@ function finishTurn(sessionId, { detail, error, silentNotify } = {}) {
     });
   }
   if (st) st.expectNotifyDone = false;
+
+  // Context meter + desktop auto-compact (official: % of model window, default 85%)
+  updateContextMeter(sessionId);
+  if (!error && !stopped && (wasWorking || expectNotify)) {
+    void maybeAutoCompact(sessionId);
+  }
 }
 
 /** True when this session should accept follow-ups into the queue (not a new prompt). */
@@ -830,6 +856,369 @@ function updateLiveStrip() {
     } else {
       ui.stripQueue.classList.add("hidden");
     }
+  }
+  updateContextMeter();
+}
+
+// ── Context window usage + auto/manual compact (official CLI semantics) ──
+
+/** Rough token estimate for mixed CJK/Latin text (desktop-side; CLI has authoritative count). */
+function estimateTokens(text) {
+  const s = String(text || "");
+  if (!s) return 0;
+  let cjk = 0;
+  let other = 0;
+  for (let i = 0; i < s.length; i++) {
+    const code = s.charCodeAt(i);
+    if (code > 0xff) cjk++;
+    else other++;
+  }
+  // ~1 token / 1.5 CJK chars; ~1 token / 4 Latin chars
+  return Math.ceil(cjk / 1.5 + other / 4);
+}
+
+/**
+ * Built-in windows aligned with Grok CLI runtime (signals.contextWindowTokens).
+ * models_cache often reports 256k for grok-4.5 while CLI uses 1.0M — do not
+ * trust cache alone for these ids.
+ */
+const KNOWN_CONTEXT_WINDOWS = {
+  grok: 1_000_000,
+  "grok-latest": 1_000_000,
+  "grok-4.3": 1_000_000,
+  "grok-4.5": 1_000_000,
+  "grok-4.5-latest": 1_000_000,
+  "grok-4.20-0309-non-reasoning": 1_000_000,
+  "grok-4.20-0309-reasoning": 1_000_000,
+  "grok-4.20-multi-agent-0309": 1_000_000,
+  "grok-4.20-non-reasoning": 1_000_000,
+  "grok-4.20-reasoning": 1_000_000,
+  "sub2api-grok": 1_000_000,
+  "grok-build": 256_000,
+  "grok-build-0.1": 256_000,
+  "grok-build-latest": 256_000,
+  "composer-2.5": 256_000,
+  "grok-composer": 256_000,
+  "grok-composer-2.5-fast": 256_000,
+};
+
+/**
+ * Resolve model context window size.
+ * Priority: session live meta → model list (enriched by main) → known map
+ * → family/name heuristics → 200k (official custom-model default).
+ * Never under-report known large-window models as 200k.
+ */
+function resolveContextWindow(modelId, models = availableModels) {
+  const id = String(modelId || currentModelId || "");
+  const sid = activeId;
+  if (sid) {
+    try {
+      const st = ensureSessionUi(sid);
+      const live =
+        st?.contextMeta?.contextWindow ??
+        st?.contextMeta?.contextWindowTokens ??
+        st?.contextMeta?.context_window ??
+        st?.contextStats?.limit;
+      const n = Number(live);
+      // Only trust live limits that look like real windows (≥64k)
+      if (Number.isFinite(n) && n >= 64_000) return n;
+    } catch {
+      /* ignore */
+    }
+  }
+
+  const m = (models || []).find(
+    (x) => x.modelId === id || x.id === id || x.name === id,
+  );
+  const fromMeta = Number(
+    m?.contextWindow ||
+      m?.context_window ||
+      m?._meta?.contextWindow ||
+      m?._meta?.context_window ||
+      m?.info?.context_window,
+  );
+
+  const known = KNOWN_CONTEXT_WINDOWS[id] || 0;
+  if (Number.isFinite(fromMeta) && fromMeta > 0) {
+    // Prefer the larger of list meta vs known CLI default so stale 256k
+    // never wins over real 1M for grok-4.5.
+    return known > 0 ? Math.max(fromMeta, known) : fromMeta;
+  }
+  if (known > 0) return known;
+
+  const lower = id.toLowerCase();
+  if (
+    /^grok-4\.5/.test(lower) ||
+    /^grok-4\.3/.test(lower) ||
+    /^grok-4\.20/.test(lower) ||
+    lower === "grok" ||
+    lower === "grok-latest" ||
+    /sub2api/.test(lower)
+  ) {
+    return 1_000_000;
+  }
+  if (/2m|2000k|2000000/.test(lower)) return 2_000_000;
+  if (/1m|1000k|1000000/.test(lower)) return 1_000_000;
+  if (/512k/.test(lower)) return 512_000;
+  if (/256k/.test(lower)) return 256_000;
+  if (/200k/.test(lower)) return 200_000;
+  if (/128k/.test(lower)) return 128_000;
+  if (/64k/.test(lower)) return 64_000;
+  // Official default for custom models that omit context_window
+  return 200_000;
+}
+
+function formatTokenCount(n) {
+  if (n == null || !Number.isFinite(n)) return "—";
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
+  if (n >= 10_000) return `${Math.round(n / 1000)}k`;
+  if (n >= 1000) return `${(n / 1000).toFixed(1)}k`;
+  return String(Math.round(n));
+}
+
+/**
+ * Apply CLI-authoritative context window from session signals / meta.
+ * Prefer this over desktop-side estimates when available.
+ */
+function applyCliContextMeta(sessionMeta, sessionId = activeId) {
+  if (!sessionMeta || !sessionId) return;
+  const st = ensureSessionUi(sessionId);
+  if (!st) return;
+  const limit = Number(
+    sessionMeta.contextWindowTokens ??
+      sessionMeta.contextWindow ??
+      sessionMeta.context_window,
+  );
+  const used = Number(
+    sessionMeta.contextTokensUsed ?? sessionMeta.tokensUsed ?? sessionMeta.tokens_used,
+  );
+  const pctRaw = Number(
+    sessionMeta.contextWindowUsage ?? sessionMeta.contextUsagePct,
+  );
+  if (!(Number.isFinite(limit) && limit >= 64_000) && !(Number.isFinite(used) && used >= 0)) {
+    return;
+  }
+  st.contextMeta = {
+    ...(st.contextMeta || {}),
+    contextWindow: Number.isFinite(limit) && limit >= 64_000 ? limit : st.contextMeta?.contextWindow,
+    contextWindowTokens:
+      Number.isFinite(limit) && limit >= 64_000 ? limit : st.contextMeta?.contextWindowTokens,
+    tokensUsed: Number.isFinite(used) && used >= 0 ? used : st.contextMeta?.tokensUsed,
+    contextUsagePct:
+      Number.isFinite(pctRaw) && pctRaw >= 0
+        ? pctRaw
+        : Number.isFinite(limit) && limit > 0 && Number.isFinite(used)
+          ? Math.min(100, Math.round((used / limit) * 1000) / 10)
+          : st.contextMeta?.contextUsagePct,
+  };
+  if (sessionId === activeId) updateContextMeter(sessionId);
+}
+
+/**
+ * Estimate context usage for a session from history + live DOM text.
+ * Overhead: system/tools/skills ~ fixed floor (CLI has exact breakdown via /context).
+ * When CLI signals are present, prefer those numbers for limit/used.
+ */
+function estimateSessionContext(sessionId = activeId) {
+  const sid = sessionId || activeId;
+  const st = sid ? ensureSessionUi(sid) : null;
+  const limit = resolveContextWindow(
+    currentModelId || st?.meta?.model || st?.contextMeta?.primaryModelId,
+  );
+
+  // Prefer CLI-reported usage when available (matches TUI bottom bar)
+  const cliUsed = Number(st?.contextMeta?.tokensUsed ?? st?.contextMeta?.contextTokensUsed);
+  if (Number.isFinite(cliUsed) && cliUsed >= 0 && limit > 0) {
+    const used = Math.min(cliUsed, limit);
+    const pctFromCli = Number(st?.contextMeta?.contextUsagePct);
+    const pct =
+      Number.isFinite(pctFromCli) && pctFromCli >= 0
+        ? Math.min(100, pctFromCli)
+        : Math.min(100, Math.round((used / limit) * 1000) / 10);
+    const stats = {
+      used,
+      limit,
+      pct,
+      modelId: currentModelId,
+      threshold: autoCompactThresholdPercent,
+      source: "cli",
+    };
+    if (st) st.contextStats = stats;
+    return stats;
+  }
+
+  let used = 6000; // base: system + tools + skills listing estimate
+
+  // Prefer history array; fall back to live DOM (avoid double-counting both)
+  const hist =
+    (Array.isArray(st?.history) && st.history.length
+      ? st.history
+      : sid === activeId && Array.isArray(history) && history.length
+        ? history
+        : null) || null;
+  if (hist) {
+    for (const m of hist) {
+      used += estimateTokens(m.text || m.content || "");
+    }
+  } else {
+    try {
+      const pane = sid ? getPane(sid) : ui.inner;
+      pane?.querySelectorAll?.(".turn .body, .thought").forEach((el) => {
+        used += estimateTokens(el.textContent || "");
+      });
+    } catch {
+      /* ignore */
+    }
+  }
+  // Attachments pending
+  for (const f of pendingFiles || []) {
+    used += estimateTokens(f.preview || f.path || f.name || "") + 200;
+  }
+
+  used = Math.min(used, limit);
+  const pct = limit > 0 ? Math.min(100, Math.round((used / limit) * 1000) / 10) : 0;
+  const stats = {
+    used,
+    limit,
+    pct,
+    modelId: currentModelId,
+    threshold: autoCompactThresholdPercent,
+    source: "estimate",
+  };
+  if (st) st.contextStats = stats;
+  return stats;
+}
+
+function updateContextMeter(sessionId = activeId) {
+  const fill = ui.stripCtxFill || $("strip-ctx-fill");
+  const label = ui.stripCtxLabel || $("strip-ctx-label");
+  const btn = ui.stripContext || $("strip-context");
+  if (!fill && !label) return;
+  if (!sessionId) {
+    if (label) label.textContent = "ctx —";
+    if (fill) fill.style.width = "0%";
+    return;
+  }
+  const s = estimateSessionContext(sessionId);
+  const thr = s.threshold || 85;
+  if (fill) {
+    fill.style.width = `${Math.min(100, s.pct)}%`;
+    fill.classList.toggle("warn", s.pct >= thr * 0.85 && s.pct < thr);
+    fill.classList.toggle("danger", s.pct >= thr);
+  }
+  if (label) {
+    label.textContent = `ctx ${s.pct}% · ${formatTokenCount(s.used)}/${formatTokenCount(s.limit)}`;
+  }
+  if (btn) {
+    btn.title =
+      (t("ctx.meterTitle") || "上下文窗口占用（估算）") +
+      `\n${formatTokenCount(s.used)} / ${formatTokenCount(s.limit)} tokens` +
+      `\n${t("ctx.threshold") || "自动压缩阈值"}: ${thr}%` +
+      `\n${t("ctx.meterHint") || "官方按模型 context 的百分比触发，非固定 2M。点击运行 /context"}`;
+    btn.dataset.pct = String(s.pct);
+    btn.dataset.limit = String(s.limit);
+  }
+}
+
+/**
+ * Manual compact — official /compact [keep instructions]
+ */
+async function runCompact(keepNote) {
+  if (!activeId) {
+    appendBanner(t("plus.needSession") || "请先打开会话", "error");
+    return;
+  }
+  const st = ensureSessionUi(activeId);
+  if (st.compacting) {
+    appendBanner(t("ctx.compacting") || "正在压缩…", "warn");
+    return;
+  }
+  st.compacting = true;
+  updateContextMeter();
+  try {
+    const args = keepNote ? String(keepNote).trim() : "";
+    appendBanner(
+      args
+        ? (t("ctx.compactStartKeep") || "正在压缩上下文（保留指定内容）…")
+        : (t("ctx.compactStart") || "正在压缩上下文…"),
+      "ok",
+    );
+    // System action: do NOT post /compact as a chat user message
+    const res = await runSilentSlash("compact", args, {
+      sessionId: activeId,
+      label: "/compact",
+    });
+    if (res?.ok === false) {
+      throw res.error || new Error("compact failed");
+    }
+    appendBanner(t("ctx.compactDone") || "上下文压缩完成", "ok");
+    updateContextMeter(activeId);
+  } catch (err) {
+    appendBanner((t("ctx.compactFail") || "压缩失败") + `：${err?.message || err}`, "error");
+  } finally {
+    st.compacting = false;
+    updateContextMeter(activeId);
+  }
+}
+
+async function runCompactInteractive() {
+  const keep = await askText({
+    title: t("ctx.compactKeepTitle") || "压缩上下文",
+    message:
+      t("ctx.compactKeepMsg") ||
+      "将执行 /compact。可选：填写需要保留的内容说明（留空则默认压缩）。\n例：keep the auth implementation details",
+    placeholder: t("ctx.compactKeepPh") || "可选：保留说明…",
+    okLabel: t("ctx.compact") || "压缩",
+  });
+  if (keep === null) return; // cancelled
+  await runCompact(keep || "");
+}
+
+/**
+ * After a turn: if estimate ≥ threshold%, trigger /compact (desktop-side mirror of CLI auto-compact).
+ * Threshold is percent of the *current model's* context window (e.g. 85% of 2M ≈ 1.7M).
+ */
+async function maybeAutoCompact(sessionId) {
+  if (desktopSettings.autoCompact === false) return;
+  const sid = sessionId || activeId;
+  if (!sid) return;
+  const st = ensureSessionUi(sid);
+  if (st.compacting || isAgentBusy(sid)) return;
+  const s = estimateSessionContext(sid);
+  const thr = autoCompactThresholdPercent || 85;
+  if (s.pct < thr) return;
+  // Avoid loop: only auto once per high-water mark
+  if (st.lastAutoCompactAtPct != null && s.pct < st.lastAutoCompactAtPct + 5) {
+    // already compacted recently at similar level
+  }
+  st.lastAutoCompactAtPct = s.pct;
+  st.compacting = true;
+  try {
+    if (sid === activeId) {
+      appendBanner(
+        (t("ctx.autoCompactBanner") || "上下文已达 {pct}%（阈值 {thr}%），正在自动压缩…")
+          .replace("{pct}", String(s.pct))
+          .replace("{thr}", String(thr)),
+        "warn",
+      );
+    }
+    // Silent system compact — never inject /compact into the chat thread
+    const res = await runSilentSlash("compact", "", {
+      sessionId: sid,
+      label: "/compact",
+      silent: sid !== activeId,
+    });
+    if (res?.ok === false) throw res.error || new Error("auto compact failed");
+    if (sid === activeId) {
+      appendBanner(t("ctx.compactDone") || "自动压缩完成", "ok");
+    }
+    updateContextMeter(sid);
+  } catch (err) {
+    if (sid === activeId) {
+      appendBanner((t("ctx.compactFail") || "自动压缩失败") + `：${err?.message || err}`, "error");
+    }
+  } finally {
+    st.compacting = false;
   }
 }
 
@@ -1344,17 +1733,38 @@ function flushStreamChunks(sid) {
   streamingEl = st.streamingEl;
   try {
     if (thought && desktopSettings.showThinking !== false) {
-      if (!streamingEl || streamingEl.dataset.kind !== "thought") {
+      // Full thinking text in collapsible .thought-block (no 2-line hard clamp)
+      let thoughtBody =
+        streamingEl?.dataset?.kind === "thought"
+          ? streamingEl
+          : st.thoughtEl && pane.contains(st.thoughtEl)
+            ? st.thoughtEl
+            : null;
+      if (!thoughtBody || thoughtBody.dataset.kind !== "thought") {
         ui.inner.querySelector(".welcome")?.remove();
+        const block = document.createElement("details");
+        block.className = "thought-block";
+        block.open = true; // expanded while streaming — full content visible
+        block.dataset.kind = "thought-block";
+        const summary = document.createElement("summary");
+        summary.innerHTML =
+          `<span class="thought-label">${escapeHtml(t("chat.thinking") || "思考过程")}</span>` +
+          `<span class="thought-meta" data-role="thought-meta"></span>`;
         const row = document.createElement("div");
         row.className = "thought";
         row.dataset.kind = "thought";
-        row.textContent = thought;
-        ui.inner.appendChild(row);
-        streamingEl = row;
-      } else {
-        // One DOM write per frame for the accumulated delta
-        streamingEl.appendChild(document.createTextNode(thought));
+        block.appendChild(summary);
+        block.appendChild(row);
+        ui.inner.appendChild(block);
+        thoughtBody = row;
+        st.thoughtEl = row;
+        st.thoughtBlock = block;
+      }
+      thoughtBody.appendChild(document.createTextNode(thought));
+      updateThoughtMeta(thoughtBody);
+      // Keep stream pointer on thought until assistant tokens start
+      if (!streamingEl || streamingEl.dataset.kind === "thought") {
+        streamingEl = thoughtBody;
       }
     }
     if (assistant) {
@@ -1383,27 +1793,105 @@ function flushStreamChunks(sid) {
   if (isActive) scrollThreadToBottom();
 }
 
+function escapeHtml(s) {
+  return String(s || "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+function updateThoughtMeta(thoughtBody) {
+  if (!thoughtBody) return;
+  const block = thoughtBody.closest?.(".thought-block");
+  const meta = block?.querySelector?.('[data-role="thought-meta"]');
+  if (!meta) return;
+  const len = (thoughtBody.textContent || "").length;
+  if (len > 0) {
+    meta.textContent =
+      len > 999
+        ? `${Math.round(len / 1000)}k`
+        : `${len}`;
+  }
+}
+
+/**
+ * Finalize a thought block: coalesce text, optional soft-clamp for huge walls of text,
+ * keep full content available via expand (no hard 2-line cut).
+ */
+function finalizeThoughtBlocks(pane) {
+  pane?.querySelectorAll?.(".thought-block, .thought").forEach((el) => {
+    const isBlock = el.classList.contains("thought-block");
+    const body = isBlock ? el.querySelector(".thought") : el;
+    if (!body) return;
+    if (body.childNodes.length > 1) {
+      const t = body.textContent || "";
+      body.textContent = t;
+    }
+    body.dataset.rawText = body.textContent || "";
+    updateThoughtMeta(body);
+    // Soft-fold only extremely long thoughts; full text via expand
+    if (
+      body.dataset.clampReady !== "1" &&
+      shouldClamp(body.dataset.rawText)
+    ) {
+      body.classList.add("clamped");
+      body.dataset.clampReady = "1";
+      let btn = el.querySelector?.(".thought-expand") || null;
+      if (!btn && isBlock) {
+        btn = document.createElement("button");
+        btn.type = "button";
+        btn.className = "expand thought-expand btn btn-outline-secondary btn-sm";
+        el.appendChild(btn);
+      } else if (!btn) {
+        // legacy bare .thought without block
+        const wrap = body.parentElement;
+        btn = document.createElement("button");
+        btn.type = "button";
+        btn.className = "expand thought-expand btn btn-outline-secondary btn-sm";
+        wrap?.insertBefore(btn, body.nextSibling);
+      }
+      if (btn) {
+        const setLabel = (collapsed) => {
+          btn.textContent = collapsed
+            ? t("chat.expand") || "展开全文"
+            : t("chat.collapse") || "收起";
+        };
+        setLabel(true);
+        btn.onclick = (e) => {
+          e.preventDefault();
+          const on = body.classList.toggle("clamped");
+          setLabel(on);
+        };
+      }
+    }
+  });
+}
+
 /** Mark stream finished so old turns can use content-visibility again. */
 function endStreamChrome(sid) {
   const pane = sid ? getPane(sid) : ui.inner;
+  const st = sid ? sessionUi.get(sid) : null;
   pane?.querySelectorAll?.(".turn.streaming").forEach((el) => {
     el.classList.remove("streaming");
     // Coalesce many Text nodes from streaming, then make URLs clickable
     const body = el.querySelector(".body");
     if (body) {
       const t = body.textContent || "";
+      body.dataset.rawText = t;
       if (/https?:\/\//i.test(t)) setMessageBody(body, t);
       else if (body.childNodes.length > 1) body.textContent = t;
       else body.dataset.linkified = "1";
+      // Fold long finished replies so the thread stays scannable
+      maybeClampTurn(el);
     }
   });
-  // Also coalesce thought rows
-  pane?.querySelectorAll?.(".thought").forEach((el) => {
-    if (el.childNodes.length > 1) {
-      const t = el.textContent;
-      el.textContent = t;
-    }
-  });
+  // Finalize thinking blocks — show full content (no 2-line hard clamp)
+  finalizeThoughtBlocks(pane);
+  if (st) {
+    st.thoughtEl = null;
+    st.thoughtBlock = null;
+  }
 }
 
 function buildToolDetailText(payload) {
@@ -1857,45 +2345,71 @@ function appendPermissionCard(req) {
   appendBanner(t("perm.needApprove") + " " + (req.toolCall?.title || ""), "warn");
 }
 
-/** Run a real slash command against the live agent (no placeholders). */
+/**
+ * Run slash against agent without posting a user bubble into the chat.
+ * Use for system actions: compact / context / session-info / plan toggle helpers.
+ * @param {string} command
+ * @param {string} [args]
+ * @param {{ sessionId?: string, silent?: boolean, label?: string }} [opts]
+ */
+async function runSilentSlash(command, args, opts = {}) {
+  const sid = opts.sessionId || activeId;
+  if (!sid) {
+    appendBanner(t("plus.needSession") || "请先打开一个会话", "error");
+    return { ok: false };
+  }
+  const cmd = String(command || "").replace(/^\//, "");
+  if (!cmd) return { ok: false };
+  const isActive = sid === activeId;
+  const label = opts.label || `/${cmd}`;
+  if (isActive) {
+    streamingEl = null;
+    setBusy(true);
+    setStatus("working", `${label}…`);
+  }
+  workingSessions.add(sid);
+  renderTabs();
+  try {
+    await grokDesktop.runSlash(cmd, args || undefined, sid);
+    if (isActive && activeId === sid) setStatus("ready", "就绪");
+    return { ok: true };
+  } catch (err) {
+    // fallback: prompt as slash text but still no user bubble (system action)
+    try {
+      await grokDesktop.prompt({
+        text: args ? `/${cmd} ${args}` : `/${cmd}`,
+        sessionId: sid,
+      });
+      if (isActive && activeId === sid) setStatus("ready", "就绪");
+      return { ok: true };
+    } catch (err2) {
+      if (isActive && activeId === sid) {
+        setStatus("error", err2.message || err.message);
+        if (!opts.silent) {
+          appendBanner(`命令失败：${err2.message || err.message}`, "error");
+        }
+      }
+      return { ok: false, error: err2 || err };
+    }
+  } finally {
+    workingSessions.delete(sid);
+    renderTabs();
+    if (isActive && activeId === sid) {
+      streamingEl = null;
+      setBusy(false);
+    }
+  }
+}
+
+/** Run slash and also show the command as a user message (interactive chat slash). */
 async function runRealSlash(command, args) {
   if (!activeId) {
     appendBanner("请先打开一个会话", "error");
     return;
   }
   const cmd = String(command || "").replace(/^\//, "");
-  const sid = activeId;
   appendTurn("user", args ? `/${cmd} ${args}` : `/${cmd}`, { clampable: false });
-  streamingEl = null;
-  workingSessions.add(sid);
-  renderTabs();
-  setBusy(true);
-  setStatus("working", `/${cmd}…`);
-  try {
-    await grokDesktop.runSlash(cmd, args || undefined, sid);
-    if (activeId === sid) setStatus("ready", "就绪");
-  } catch (err) {
-    // fallback: normal prompt path
-    try {
-      await grokDesktop.prompt({
-        text: args ? `/${cmd} ${args}` : `/${cmd}`,
-        sessionId: sid,
-      });
-      if (activeId === sid) setStatus("ready", "就绪");
-    } catch (err2) {
-      if (activeId === sid) {
-        setStatus("error", err2.message || err.message);
-        appendBanner(`命令失败：${err2.message || err.message}`, "error");
-      }
-    }
-  } finally {
-    workingSessions.delete(sid);
-    renderTabs();
-    if (activeId === sid) {
-      streamingEl = null;
-      setBusy(false);
-    }
-  }
+  await runSilentSlash(cmd, args, { sessionId: activeId });
 }
 
 function setBusy(v) {
@@ -2131,6 +2645,8 @@ function setModelsState(modelsPayload) {
   if (!modelsPayload) return;
   if (Array.isArray(modelsPayload.availableModels)) {
     availableModels = modelsPayload.availableModels;
+    // refresh context limit when models list updates
+    updateContextMeter(activeId);
     // pick effort options from current model meta if present
     const cur = availableModels.find((m) => m.modelId === (modelsPayload.currentModelId || currentModelId));
     const efforts = cur?._meta?.reasoningEfforts || cur?.reasoningEfforts;
@@ -2289,11 +2805,25 @@ $("btn-act-export")?.addEventListener("click", async () => {
 // Settings → 环境：低频诊断命令（顶栏已不放）
 async function runSettingsSlash(name) {
   switchView("chat");
-  await runRealSlash(name);
+  // System diagnostics: call agent directly, don't post /cmd as a user message
+  const silent = /^(context|session-info|usage|compact)$/i.test(String(name || ""));
+  if (silent) {
+    await runSilentSlash(name, "", { label: `/${String(name).replace(/^\//, "")}` });
+  } else {
+    await runRealSlash(name);
+  }
 }
 $("btn-run-usage")?.addEventListener("click", () => runSettingsSlash("usage"));
-$("btn-run-context")?.addEventListener("click", () => runSettingsSlash("context"));
-$("btn-run-compact")?.addEventListener("click", () => runSettingsSlash("compact"));
+$("btn-run-context")?.addEventListener("click", () =>
+  void runSilentSlash("context", "", { label: "/context" }),
+);
+$("btn-run-compact")?.addEventListener("click", () => void runCompact(""));
+$("btn-run-compact-keep")?.addEventListener("click", () => void runCompactInteractive());
+$("btn-compact-strip")?.addEventListener("click", () => void runCompactInteractive());
+// Click context meter → /context (system action, not a chat bubble)
+$("strip-context")?.addEventListener("click", () =>
+  void runSilentSlash("context", "", { label: "/context" }),
+);
 $("btn-run-session-info")?.addEventListener("click", () => runSettingsSlash("session-info"));
 
 // ── Sidebar sessions ───────────────────────────────────
@@ -2515,7 +3045,76 @@ function clearThread() {
 }
 
 function shouldClamp(text) {
-  return (text || "").length > CLAMP || (text || "").split("\n").length > 8;
+  const t = text || "";
+  if (!t) return false;
+  if (t.length > CLAMP_CHARS) return true;
+  const lines = t.split("\n");
+  if (lines.length > CLAMP_LINES) return true;
+  // Long single lines (e.g. minified dumps)
+  if (lines.some((ln) => ln.length > 400)) return true;
+  return false;
+}
+
+/**
+ * Attach expand/collapse UI to a message turn body.
+ * Idempotent; works after streaming finishes and for history.
+ */
+function ensureExpandControl(turn, body) {
+  if (!turn || !body) return;
+  if (body.dataset.clampReady === "1") return;
+  body.dataset.clampReady = "1";
+  body.classList.add("clamped");
+  body.setAttribute("aria-expanded", "false");
+
+  let btn = turn.querySelector(":scope > .expand");
+  if (!btn) {
+    btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "expand btn btn-outline-secondary btn-sm";
+    turn.appendChild(btn);
+  }
+  const setLabel = (collapsed) => {
+    btn.textContent = collapsed
+      ? t("chat.expand") || "展开全文"
+      : t("chat.collapse") || "收起";
+    btn.setAttribute("aria-label", btn.textContent);
+    btn.dataset.state = collapsed ? "collapsed" : "expanded";
+  };
+  setLabel(true);
+  btn.onclick = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const collapsed = body.classList.toggle("clamped");
+    body.setAttribute("aria-expanded", collapsed ? "false" : "true");
+    setLabel(collapsed);
+    // Expanding long msg: keep button in view
+    if (!collapsed) {
+      requestAnimationFrame(() => {
+        btn.scrollIntoView({ block: "nearest", behavior: "smooth" });
+      });
+    }
+  };
+}
+
+/**
+ * Decide whether to fold this turn (text length and/or rendered height).
+ */
+function maybeClampTurn(turn) {
+  if (!turn || turn.classList.contains("streaming")) return;
+  const body = turn.querySelector(":scope > .body");
+  if (!body || body.dataset.clampReady === "1") return;
+  const text = body.dataset.rawText || body.textContent || "";
+  if (shouldClamp(text)) {
+    ensureExpandControl(turn, body);
+    return;
+  }
+  // Height check after layout (markdown can be tall with few chars)
+  requestAnimationFrame(() => {
+    if (!body.isConnected || body.dataset.clampReady === "1") return;
+    if (body.scrollHeight > CLAMP_HEIGHT_PX) {
+      ensureExpandControl(turn, body);
+    }
+  });
 }
 
 /** Match http(s) URLs in plain text (trailing punctuation stripped into separate text). */
@@ -2599,6 +3198,7 @@ function appendTurn(role, text, { stream = false, clampable = true, images = [],
   if (stream) turn.classList.add("streaming");
   const body = document.createElement("div");
   body.className = "body";
+  body.dataset.rawText = text || "";
   // Stream as plain text (fast); linkify when stream ends / for history
   if (stream) {
     body.textContent = text || "";
@@ -2614,21 +3214,7 @@ function appendTurn(role, text, { stream = false, clampable = true, images = [],
     }
   }
 
-  if (!stream && clampable && shouldClamp(text)) {
-    body.classList.add("clamped");
-    const btn = document.createElement("button");
-    btn.type = "button";
-    btn.className = "expand";
-    btn.textContent = "展开全文";
-    btn.onclick = () => {
-      body.classList.toggle("clamped");
-      btn.textContent = body.classList.contains("clamped") ? "展开全文" : "收起";
-    };
-    turn.appendChild(body);
-    turn.appendChild(btn);
-  } else {
-    turn.appendChild(body);
-  }
+  turn.appendChild(body);
 
   if (role !== "user" && images?.length) {
     const media = ensureTurnMedia(turn);
@@ -2638,6 +3224,12 @@ function appendTurn(role, text, { stream = false, clampable = true, images = [],
   }
 
   ui.inner.appendChild(turn);
+
+  // Auto-fold long messages (history + finished non-stream). Streaming folds on endStreamChrome.
+  if (!stream && clampable !== false) {
+    maybeClampTurn(turn);
+  }
+
   if (!skipScroll) scrollThreadToBottom({ force: !stream });
   if (stream) streamingEl = body;
   return body;
@@ -2867,6 +3459,7 @@ function renderHistoryWithAssets(messages, assets, sessionMeta) {
     });
   }
   ui.thread.scrollTop = ui.thread.scrollHeight;
+  updateContextMeter(activeId);
 }
 
 function appendTool(title) {
@@ -2947,6 +3540,8 @@ function applyHeader(s) {
     st.meta = { ...(st.meta || {}), ...s };
     // Only re-render tabs when title changes (avoid thrashing on status spam)
     if (s.title && s.title !== prevTitle) renderTabs();
+    // Sync CLI signals.contextWindowTokens into the usage strip (1.0M not 200k)
+    applyCliContextMeta(st.meta, s.id);
   }
   ui.title.textContent = s?.title || "会话";
   ui.sub.textContent = [s?.cwd, s?.model, s?.id ? s.id.slice(0, 8) + "…" : ""]
@@ -3875,7 +4470,10 @@ async function selectSession(sessionId) {
 
   const cachedMeta =
     stTarget.meta || sessions.find((x) => x.id === sessionId) || null;
-  if (cachedMeta) applyHeader(cachedMeta);
+  if (cachedMeta) {
+    applyHeader(cachedMeta);
+    applyCliContextMeta(cachedMeta, sessionId);
+  }
   restoreComposer(sessionId);
   sessionAgentMode = stTarget.agentMode || "default";
   currentGoal = stTarget.goal || null;
@@ -4464,7 +5062,7 @@ async function sendNow({ text, images, files, sessionId = null, generation = nul
         detail: turnError ? turnError : "已完成",
         error: turnError || null,
       });
-      // System notify is handled inside finishTurn (all sessions)
+      // finishTurn updates context meter + maybeAutoCompact
 
       void refreshSessions()
         .then(() => refreshSidebarSessionState())
@@ -5113,6 +5711,15 @@ async function loadSettings() {
     if ($("set-show-thinking")) $("set-show-thinking").checked = !!desktopSettings.showThinking;
     if ($("set-enter-send")) $("set-enter-send").checked = desktopSettings.enterToSend !== false;
     if ($("set-notify-done")) $("set-notify-done").checked = desktopSettings.notifyOnDone !== false;
+    if ($("set-auto-compact")) $("set-auto-compact").checked = desktopSettings.autoCompact !== false;
+    // Official CLI threshold from config.toml [session]
+    const thr = Number(s.grok?.autoCompactThreshold);
+    if (Number.isFinite(thr) && thr > 0 && thr <= 100) {
+      autoCompactThresholdPercent = thr;
+    }
+    if ($("set-compact-threshold")) {
+      $("set-compact-threshold").textContent = `${autoCompactThresholdPercent}%`;
+    }
     if ($("set-open-at-login")) $("set-open-at-login").checked = !!desktopSettings.openAtLogin;
     if ($("set-close-behavior")) {
       $("set-close-behavior").value =
@@ -5132,7 +5739,9 @@ async function loadSettings() {
       }
     })();
     if ($("set-density")) $("set-density").value = desktopSettings.density || "comfortable";
+    if ($("set-theme")) $("set-theme").value = desktopSettings.theme === "light" ? "light" : "dark";
     if ($("set-ui-scale")) $("set-ui-scale").value = desktopSettings.uiScale || "auto";
+    applyTheme(desktopSettings.theme || "dark");
     applyDensity(desktopSettings.density);
     applyUiScale(desktopSettings.uiScale || "auto");
     applyWallpaper();
@@ -5192,6 +5801,24 @@ function applyDensity(d) {
   document.body.classList.toggle("compact", d === "compact");
   // re-apply type scale so compact multiplier sticks
   applyUiScale(desktopSettings.uiScale || "auto");
+}
+
+/**
+ * Apply product theme (dark | light).
+ * @see docs/THEME-SWITCH-DESIGN.md
+ */
+function applyTheme(theme) {
+  const mode = theme === "light" ? "light" : "dark";
+  desktopSettings.theme = mode;
+  document.documentElement.setAttribute("data-theme", mode);
+  document.documentElement.setAttribute("data-bs-theme", mode);
+  document.body.classList.toggle("theme-light", mode === "light");
+  document.body.classList.toggle("theme-dark", mode !== "light");
+  try {
+    grokDesktop.setWindowBackground?.(mode === "light" ? "#f4f4f5" : "#09090b");
+  } catch {
+    /* ignore */
+  }
 }
 
 /** Map window width → layout tier for CSS tokens. */
@@ -5491,14 +6118,17 @@ $("btn-settings-save")?.addEventListener("click", async () => {
     const openAtLogin = !!$("set-open-at-login")?.checked;
     const closeBehavior =
       $("set-close-behavior")?.value === "quit" ? "quit" : "tray";
+    const theme = $("set-theme")?.value === "light" ? "light" : "dark";
     desktopSettings = await grokDesktop.saveDesktopSettings({
       showThinking: !!$("set-show-thinking")?.checked,
       enterToSend: !!$("set-enter-send")?.checked,
       notifyOnDone: !!$("set-notify-done")?.checked,
+      autoCompact: !!$("set-auto-compact")?.checked,
       openAtLogin,
       closeBehavior,
       checkUpdates: !!$("set-check-updates")?.checked,
       density: $("set-density")?.value || "comfortable",
+      theme,
       uiScale: $("set-ui-scale")?.value || "auto",
       autoApprove: mapped.autoApprove,
       accessMode: mapped.accessMode,
@@ -5515,6 +6145,7 @@ $("btn-settings-save")?.addEventListener("click", async () => {
     } catch {
       /* ignore */
     }
+    applyTheme(theme);
     applyDensity(desktopSettings.density);
     applyUiScale(desktopSettings.uiScale || "auto");
     applyWallpaper();
@@ -6236,6 +6867,7 @@ $("update-banner-dismiss")?.addEventListener("click", () => {
     desktopSettings = { ...desktopSettings, ...(s.desktop || {}) };
     const grok = s.grok || {};
     desktopSettings.accessMode = deriveAccessMode(desktopSettings, grok);
+    applyTheme(desktopSettings.theme || "dark");
     applyDensity(desktopSettings.density);
     applyUiScale(desktopSettings.uiScale || "auto");
     applyWallpaper();
@@ -6243,12 +6875,20 @@ $("update-banner-dismiss")?.addEventListener("click", () => {
     setAccessModeUi(desktopSettings.accessMode);
   } catch {
     if (window.GrokI18n) GrokI18n.applyI18n(document);
+    applyTheme("dark");
     applyUiScale("auto");
   }
   wireWallpaperUi();
   await loadWallpaperAssets();
   applyWallpaper();
   updateAccessChip();
+
+  // Theme: live switch + persist
+  $("set-theme")?.addEventListener("change", () => {
+    const mode = $("set-theme").value === "light" ? "light" : "dark";
+    applyTheme(mode);
+    void grokDesktop.saveDesktopSettings({ theme: mode }).catch(() => {});
+  });
 
   // Layout tier + scale on resize / DPI change
   let resizeTimer = 0;

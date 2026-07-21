@@ -121,6 +121,26 @@ GrokUI.showToast("已保存", "ok");
 .my-label { font-size: var(--fs-sm); color: var(--muted); }
 ```
 
+## Scrollbars (project UI kit)
+
+Bootstrap 5 无独立滚动条组件；本项目标准写在 `bootstrap-theme.css`：
+
+```html
+<!-- 推荐：Bootstrap 溢出工具类 -->
+<div class="overflow-auto ui-scroll">…</div>
+<div class="overflow-y-auto">…</div>
+
+<!-- 侧栏等密集列表可用更细滚动条 -->
+<div class="overflow-auto ui-scroll-sm">…</div>
+```
+
+主题 token（随深色/浅色变化）：
+
+- `--scrollbar-thumb` / `--scrollbar-thumb-hover`
+- `--bs-scrollbar-size`（10px）/ `--bs-scrollbar-size-sm`（8px）
+
+**禁止**在页面里单独写一套 `::-webkit-scrollbar`。
+
 ## Forbidden
 
 - CDN Bootstrap

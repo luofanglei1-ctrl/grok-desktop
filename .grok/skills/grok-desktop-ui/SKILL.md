@@ -72,8 +72,14 @@ Do not break this order. Do not use CDN (CSP: `default-src 'self'`).
 4. **Design tokens**  
    - Type: `var(--fs-xs|sm|md|base|lg|chat|title|2xl)`  
    - Layout: `var(--side-w)`, `var(--content)`, `var(--page-pad-x)`  
-   - Colors: existing CSS vars (`--accent`, `--text`, …) or Bootstrap dark theme vars  
+   - Colors: existing CSS vars (`--accent`, `--text`, …) or Bootstrap theme vars  
    - Do not hardcode random px font sizes for new UI  
+
+4b. **Scrollbars (UI kit)**  
+   - Bootstrap has no scrollbar component; project standard lives in `bootstrap-theme.css`  
+   - Tokens: `--bs-scrollbar-*` / `--scrollbar-thumb` (theme-aware dark/light)  
+   - Prefer Bootstrap overflow utils: `overflow-auto`, `overflow-y-auto`, plus optional `.ui-scroll` / `.ui-scroll-sm`  
+   - Do **not** invent one-off `::-webkit-scrollbar` styles per page  
 
 5. **Project legacy classes**  
    Shell still uses product classes (`.btn-new`, `.session-row`, `.turn`, …).  

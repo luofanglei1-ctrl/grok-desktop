@@ -48,6 +48,12 @@ const DEFAULT_DESKTOP = {
    * safe = 审批 · balanced = 智能 · full = 完全访问
    */
   accessMode: "full",
+  /**
+   * Desktop-side auto-compact when estimated context reaches threshold.
+   * Threshold % is read from CLI config.toml [session] auto_compact_threshold_percent (default 85).
+   * Official agent also auto-compacts; this mirrors that behavior over ACP with UI feedback.
+   */
+  autoCompact: true,
 };
 
 function configPath() {
@@ -125,6 +131,12 @@ function readGrokConfigSummary() {
   } catch {
     text = "";
   }
+  const thrRaw = readTomlValue(text, "session", "auto_compact_threshold_percent");
+  let autoCompactThreshold = 85;
+  if (thrRaw != null && thrRaw !== "") {
+    const n = Number(thrRaw);
+    if (Number.isFinite(n) && n > 0 && n <= 100) autoCompactThreshold = n;
+  }
   return {
     path: file,
     raw: text,
@@ -133,6 +145,8 @@ function readGrokConfigSummary() {
     compactMode: readTomlValue(text, "ui", "compact_mode") === true,
     defaultModel: readTomlValue(text, "models", "default") || null,
     autoUpdate: readTomlValue(text, "cli", "auto_update"),
+    /** Official [session] auto_compact_threshold_percent (percent of model context_window) */
+    autoCompactThreshold,
   };
 }
 
@@ -166,6 +180,181 @@ function updateGrokConfig(patch = {}) {
   return readGrokConfigSummary();
 }
 
+/**
+ * Built-in context windows aligned with official Grok CLI runtime
+ * (session signals.contextWindowTokens), not the sometimes-stale models_cache.
+ * Custom / unknown models fall through to config → cache → 200k.
+ */
+const KNOWN_MODEL_CONTEXT_WINDOWS = {
+  grok: 1_000_000,
+  "grok-latest": 1_000_000,
+  "grok-4.3": 1_000_000,
+  "grok-4.5": 1_000_000,
+  "grok-4.5-latest": 1_000_000,
+  "grok-4.20-0309-non-reasoning": 1_000_000,
+  "grok-4.20-0309-reasoning": 1_000_000,
+  "grok-4.20-multi-agent-0309": 1_000_000,
+  "grok-4.20-non-reasoning": 1_000_000,
+  "grok-4.20-reasoning": 1_000_000,
+  "grok-build": 256_000,
+  "grok-build-0.1": 256_000,
+  "grok-build-latest": 256_000,
+  "composer-2.5": 256_000,
+  "grok-composer": 256_000,
+  "grok-composer-2.5-fast": 256_000,
+  "grok-imagine": 256_000,
+  "grok-imagine-edit": 256_000,
+  "grok-imagine-image": 256_000,
+  "grok-imagine-image-quality": 256_000,
+  "grok-imagine-video": 256_000,
+  "grok-imagine-video-1.5": 256_000,
+};
+
+/** Official Grok default when a new custom model omits context_window. */
+const DEFAULT_CONTEXT_WINDOW = 200_000;
+
+/** Parse all [model.<id>] context_window values from config.toml. */
+function readConfigModelContextWindows(text) {
+  const map = Object.create(null);
+  if (!text) return map;
+  // [model.foo] or [model."foo-bar"]
+  const sectionRe = /\[model\.(?:"([^"]+)"|([^\]]+))\]([\s\S]*?)(?=\n\[|$)/g;
+  let m;
+  while ((m = sectionRe.exec(text)) !== null) {
+    const id = (m[1] || m[2] || "").trim();
+    if (!id) continue;
+    const block = m[3] || "";
+    const cw = block.match(/^\s*context_window\s*=\s*(\d+)\s*$/m);
+    if (cw) {
+      const n = Number(cw[1]);
+      if (Number.isFinite(n) && n > 0) map[id] = n;
+    }
+  }
+  return map;
+}
+
+function readModelsCacheContextWindows() {
+  const map = Object.create(null);
+  try {
+    const file = path.join(grokHome(), "models_cache.json");
+    if (!fs.existsSync(file)) return map;
+    const data = JSON.parse(fs.readFileSync(file, "utf8"));
+    const models = data?.models || {};
+    for (const [id, entry] of Object.entries(models)) {
+      const n = Number(
+        entry?.info?.context_window ??
+          entry?.context_window ??
+          entry?.info?.contextWindow,
+      );
+      if (Number.isFinite(n) && n > 0) map[id] = n;
+    }
+  } catch {
+    /* ignore */
+  }
+  return map;
+}
+
+/**
+ * Resolve context window for a model id (tokens).
+ * Priority: config.toml [model.id] → known CLI defaults → family heuristics
+ * → models_cache → name patterns → 200k (official custom-model default).
+ */
+function resolveContextWindowForModel(modelId, opts = {}) {
+  const id = String(modelId || "").trim();
+  if (!id) return DEFAULT_CONTEXT_WINDOW;
+
+  const configMap =
+    opts.configMap ||
+    (() => {
+      try {
+        const file = configPath();
+        const text = fs.existsSync(file) ? fs.readFileSync(file, "utf8") : "";
+        return readConfigModelContextWindows(text);
+      } catch {
+        return Object.create(null);
+      }
+    })();
+
+  if (configMap[id] > 0) return configMap[id];
+
+  if (KNOWN_MODEL_CONTEXT_WINDOWS[id] > 0) {
+    return KNOWN_MODEL_CONTEXT_WINDOWS[id];
+  }
+
+  const lower = id.toLowerCase();
+  // Family heuristics matching CLI runtime (e.g. grok-4.5 → 1M)
+  if (
+    /^grok-4\.5/.test(lower) ||
+    /^grok-4\.3/.test(lower) ||
+    /^grok-4\.20/.test(lower) ||
+    lower === "grok" ||
+    lower === "grok-latest" ||
+    /sub2api/.test(lower)
+  ) {
+    return 1_000_000;
+  }
+
+  const cacheMap = opts.cacheMap || readModelsCacheContextWindows();
+  if (cacheMap[id] > 0) return cacheMap[id];
+
+  if (/2m|2000k|2000000/.test(lower)) return 2_000_000;
+  if (/1m|1000k|1000000/.test(lower)) return 1_000_000;
+  if (/512k/.test(lower)) return 512_000;
+  if (/256k/.test(lower)) return 256_000;
+  if (/200k/.test(lower)) return 200_000;
+  if (/128k/.test(lower)) return 128_000;
+  if (/64k/.test(lower)) return 64_000;
+
+  return DEFAULT_CONTEXT_WINDOW;
+}
+
+/**
+ * Enrich a model list entry with contextWindow (for Desktop UI / ACP bridge).
+ */
+function enrichModelWithContextWindow(model, opts = {}) {
+  const modelId = model?.modelId || model?.id || model?.name || "";
+  const existing = Number(
+    model?.contextWindow ??
+      model?.context_window ??
+      model?._meta?.contextWindow ??
+      model?._meta?.context_window ??
+      model?.info?.context_window,
+  );
+
+  let configMap = opts.configMap;
+  if (!configMap) {
+    try {
+      const file = configPath();
+      const text = fs.existsSync(file) ? fs.readFileSync(file, "utf8") : "";
+      configMap = readConfigModelContextWindows(text);
+    } catch {
+      configMap = Object.create(null);
+    }
+  }
+
+  // Explicit [model.id] context_window in config.toml always wins
+  if (configMap[modelId] > 0) {
+    return {
+      ...model,
+      modelId: modelId || model?.modelId,
+      contextWindow: configMap[modelId],
+    };
+  }
+
+  const resolved = resolveContextWindowForModel(modelId, { ...opts, configMap });
+  // No config override: take the larger of resolver (known CLI / family) and ACP
+  // meta so stale models_cache 256k never under-reports CLI's 1M for grok-4.5.
+  let contextWindow = resolved;
+  if (Number.isFinite(existing) && existing > 0) {
+    contextWindow = Math.max(existing, resolved);
+  }
+  return {
+    ...model,
+    modelId: modelId || model?.modelId,
+    contextWindow,
+  };
+}
+
 function listModels() {
   return new Promise((resolve) => {
     const cli = resolveGrokCli();
@@ -178,13 +367,37 @@ function listModels() {
       out += d.toString();
     });
     child.on("close", () => {
+      let configMap = Object.create(null);
+      let cacheMap = Object.create(null);
+      try {
+        const file = configPath();
+        const text = fs.existsSync(file) ? fs.readFileSync(file, "utf8") : "";
+        configMap = readConfigModelContextWindows(text);
+      } catch {
+        /* ignore */
+      }
+      cacheMap = readModelsCacheContextWindows();
+      const opts = { configMap, cacheMap };
+
       const models = [];
       let defaultModel = null;
       for (const line of out.split("\n")) {
         const def = line.match(/Default model:\s*(\S+)/i);
         if (def) defaultModel = def[1];
         const m = line.match(/^\s*[\*\-]\s+(\S+)/);
-        if (m) models.push({ id: m[1], isDefault: /\*/.test(line) || m[1] === defaultModel });
+        if (m) {
+          const id = m[1];
+          models.push(
+            enrichModelWithContextWindow(
+              {
+                id,
+                modelId: id,
+                isDefault: /\*/.test(line) || id === defaultModel,
+              },
+              opts,
+            ),
+          );
+        }
       }
       resolve({ models, defaultModel, raw: out });
     });
@@ -203,6 +416,8 @@ function getAllSettings() {
 
 module.exports = {
   DESKTOP_SETTINGS,
+  DEFAULT_CONTEXT_WINDOW,
+  KNOWN_MODEL_CONTEXT_WINDOWS,
   readDesktopSettings,
   writeDesktopSettings,
   readGrokConfigSummary,
@@ -210,4 +425,8 @@ module.exports = {
   listModels,
   getAllSettings,
   configPath,
+  resolveContextWindowForModel,
+  enrichModelWithContextWindow,
+  readConfigModelContextWindows,
+  readModelsCacheContextWindows,
 };

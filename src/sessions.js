@@ -154,6 +154,55 @@ function loadHistoryPreview(sessionDir, { maxMessages = 40, maxChars = 3500 } = 
   return messages;
 }
 
+/**
+ * Read CLI signals.json for a session dir (authoritative context window / usage).
+ * @returns {{ contextWindowTokens?: number, contextTokensUsed?: number, contextWindowUsage?: number, primaryModelId?: string } | null}
+ */
+function readSessionSignals(sessionDir) {
+  if (!sessionDir) return null;
+  const data = safeReadJson(path.join(sessionDir, "signals.json"));
+  if (!data || typeof data !== "object") return null;
+  const contextWindowTokens = Number(data.contextWindowTokens);
+  const contextTokensUsed = Number(data.contextTokensUsed);
+  const contextWindowUsage = Number(data.contextWindowUsage);
+  return {
+    contextWindowTokens:
+      Number.isFinite(contextWindowTokens) && contextWindowTokens > 0
+        ? contextWindowTokens
+        : undefined,
+    contextTokensUsed:
+      Number.isFinite(contextTokensUsed) && contextTokensUsed >= 0
+        ? contextTokensUsed
+        : undefined,
+    contextWindowUsage:
+      Number.isFinite(contextWindowUsage) && contextWindowUsage >= 0
+        ? contextWindowUsage
+        : undefined,
+    primaryModelId: data.primaryModelId || data.modelsUsed?.[0] || undefined,
+  };
+}
+
+function sessionRecordFromSummary(data, full) {
+  const signals = readSessionSignals(full);
+  return {
+    id: data.info.id,
+    cwd: data.info.cwd || null,
+    title:
+      data.generated_title ||
+      data.session_summary ||
+      data.info.id.slice(0, 8),
+    summary: data.session_summary || "",
+    createdAt: data.created_at || null,
+    updatedAt: data.updated_at || data.last_active_at || null,
+    model: data.current_model_id || signals?.primaryModelId || null,
+    numMessages: data.num_chat_messages ?? data.num_messages ?? 0,
+    dir: full,
+    contextWindowTokens: signals?.contextWindowTokens,
+    contextTokensUsed: signals?.contextTokensUsed,
+    contextWindowUsage: signals?.contextWindowUsage,
+  };
+}
+
 function findSession(sessionId) {
   if (!sessionId) return null;
   // Fast path: walk only matching id folder names
@@ -176,20 +225,7 @@ function findSession(sessionId) {
         if (fs.existsSync(summary)) {
           const data = safeReadJson(summary);
           if (data?.info?.id) {
-            return {
-              id: data.info.id,
-              cwd: data.info.cwd || null,
-              title:
-                data.generated_title ||
-                data.session_summary ||
-                data.info.id.slice(0, 8),
-              summary: data.session_summary || "",
-              createdAt: data.created_at || null,
-              updatedAt: data.updated_at || data.last_active_at || null,
-              model: data.current_model_id || null,
-              numMessages: data.num_chat_messages ?? data.num_messages ?? 0,
-              dir: full,
-            };
+            return sessionRecordFromSummary(data, full);
           }
         }
       }
@@ -272,4 +308,5 @@ module.exports = {
   deleteSessionDir,
   extractTextContent,
   cleanUserText,
+  readSessionSignals,
 };

@@ -1595,6 +1595,27 @@ ipcMain.handle("mcp:add", async (_e, { name, command, args }) =>
   mcp.addMcp(name, command, args || []),
 );
 
+function mapModelForUi(m) {
+  const modelId = m.modelId || m.id;
+  const enriched = settings.enrichModelWithContextWindow({
+    modelId,
+    id: modelId,
+    name: m.name || modelId,
+    description: m.description || "",
+    contextWindow: m.contextWindow ?? m.context_window,
+    context_window: m.context_window ?? m.contextWindow,
+    _meta: m._meta || null,
+    info: m.info || null,
+  });
+  return {
+    modelId: enriched.modelId || modelId,
+    name: enriched.name || modelId,
+    description: enriched.description || "",
+    contextWindow: enriched.contextWindow,
+    _meta: enriched._meta || null,
+  };
+}
+
 function extractModels(payload, client) {
   if (!payload) return null;
   const models = payload.models || payload;
@@ -1603,12 +1624,7 @@ function extractModels(payload, client) {
   return {
     currentModelId:
       models.currentModelId || client?.currentModelId || null,
-    availableModels: available.map((m) => ({
-      modelId: m.modelId || m.id,
-      name: m.name || m.modelId || m.id,
-      description: m.description || "",
-      _meta: m._meta || null,
-    })),
+    availableModels: available.map((m) => mapModelForUi(m)),
   };
 }
 
@@ -1622,31 +1638,18 @@ ipcMain.handle("models:list", async (_e, { sessionId } = {}) => {
       return {
         currentModelId:
           client.currentModelId || client.lastModels?.currentModelId || fromCli.defaultModel,
-        availableModels: live.map((m) => ({
-          modelId: m.modelId || m.id,
-          name: m.name || m.modelId || m.id,
-          description: m.description || "",
-          _meta: m._meta || null,
-        })),
+        availableModels: live.map((m) => mapModelForUi(m)),
       };
     }
     return {
       currentModelId: client.currentModelId || fromCli.defaultModel,
-      availableModels: fromCli.models.map((m) => ({
-        modelId: m.id,
-        name: m.id,
-        description: "",
-      })),
+      availableModels: (fromCli.models || []).map((m) => mapModelForUi(m)),
     };
   }
   const fromCli = await settings.listModels();
   return {
     currentModelId: fromCli.defaultModel,
-    availableModels: fromCli.models.map((m) => ({
-      modelId: m.id,
-      name: m.id,
-      description: "",
-    })),
+    availableModels: (fromCli.models || []).map((m) => mapModelForUi(m)),
   };
 });
 
@@ -1793,6 +1796,17 @@ ipcMain.handle("notify:has", async (_e, key) => ({
  * 检查 GitHub 是否有更新（对比 tag / name 中的版本号）
  */
 ipcMain.handle("app:brand", async () => ({ ...brand, version: DESKTOP_VERSION }));
+
+ipcMain.handle("app:setWindowBackground", async (_e, color) => {
+  try {
+    if (mainWindow && !mainWindow.isDestroyed() && color) {
+      mainWindow.setBackgroundColor(String(color));
+    }
+    return { ok: true };
+  } catch (err) {
+    return { ok: false, reason: err.message };
+  }
+});
 
 ipcMain.handle("app:checkUpdate", async () => {
   const current = DESKTOP_VERSION;

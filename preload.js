@@ -73,6 +73,7 @@ contextBridge.exposeInMainWorld("grokDesktop", {
 
   appInfo: () => ipcRenderer.invoke("app:info"),
   brandInfo: () => ipcRenderer.invoke("app:brand"),
+  setWindowBackground: (color) => ipcRenderer.invoke("app:setWindowBackground", color),
   displayInfo: () => ipcRenderer.invoke("app:displayInfo"),
   onDisplayMetrics: (cb) => on("display:metrics", cb),
   diagnose: () => ipcRenderer.invoke("app:diagnose"),

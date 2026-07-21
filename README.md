@@ -349,6 +349,7 @@ Auth stays with the official CLI. Desktop settings are local only. Do not use Fu
 | [docs/RELEASE_v1.0.2.md](./docs/RELEASE_v1.0.2.md) | **v1.0.2 GitHub Release 正文** |
 | [docs/RELEASE_v1.0.1.md](./docs/RELEASE_v1.0.1.md) | v1.0.1 发布说明 |
 | [docs/ABOUT.md](./docs/ABOUT.md) | 维护者与品牌信息 |
+| [docs/THEME-SWITCH-DESIGN.md](./docs/THEME-SWITCH-DESIGN.md) | **主题切换设计**（深色 / 普通浅色，待实现） |
 
 ### 1.0.2 摘要
 
