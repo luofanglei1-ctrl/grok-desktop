@@ -33,6 +33,7 @@ const memory = require("./src/memory");
 const mcp = require("./src/mcp");
 const { commandExists, defaultCwd, spawnCli } = require("./src/platform");
 const brand = require("./src/brand");
+const notified = require("./src/notified");
 
 let mainWindow = null;
 /** @type {Map<string, { client: import('./src/acp').AcpClient, meta: object|null, cwd: string, lastUsed: number }>} */
@@ -91,19 +92,48 @@ function pathToDataUrl(filePath) {
   }
 }
 
+function mediaFingerprint(dataUrl, filePath, extra) {
+  if (extra) return String(extra);
+  if (filePath) {
+    try {
+      return `path:${path.resolve(filePath).toLowerCase()}`;
+    } catch {
+      return `path:${String(filePath).replace(/\\/g, "/").toLowerCase()}`;
+    }
+  }
+  const s = String(dataUrl || "");
+  const m = s.match(/^data:([^;]+);base64,(.+)$/i);
+  if (m) {
+    const b = m[2];
+    return `b64:${m[1]}:${b.length}:${b.slice(0, 40)}:${b.slice(-20)}`;
+  }
+  return s.slice(0, 96);
+}
+
 function mediaForRenderer(media) {
   if (!media) return null;
   if (media.kind === "base64" && media.data) {
+    const dataUrl = `data:${media.mimeType || "image/png"};base64,${media.data}`;
     return {
       kind: "dataUrl",
-      dataUrl: `data:${media.mimeType || "image/png"};base64,${media.data}`,
+      dataUrl,
       mimeType: media.mimeType,
+      fingerprint:
+        media.fingerprint ||
+        mediaFingerprint(dataUrl, null, null),
     };
   }
   if (media.kind === "path" && media.path) {
     const dataUrl = pathToDataUrl(media.path);
-    if (!dataUrl) return { kind: "path", path: media.path, mimeType: media.mimeType };
-    return { kind: "dataUrl", dataUrl, path: media.path, mimeType: media.mimeType };
+    const fp = mediaFingerprint(dataUrl, media.path, media.fingerprint);
+    if (!dataUrl) return { kind: "path", path: media.path, mimeType: media.mimeType, fingerprint: fp };
+    return {
+      kind: "dataUrl",
+      dataUrl,
+      path: media.path,
+      mimeType: media.mimeType,
+      fingerprint: fp,
+    };
   }
   return media;
 }
@@ -151,12 +181,13 @@ function showMainWindow() {
 function hideToTray() {
   if (!mainWindow || mainWindow.isDestroyed()) return;
   mainWindow.hide();
-  // Optional balloon once (Windows)
+  // Tip balloon only first hide this session
   try {
-    if (appTray && process.platform === "win32") {
+    if (appTray && process.platform === "win32" && !appTray._didHideTip) {
+      appTray._didHideTip = true;
       appTray.displayBalloon?.({
         title: "Grok Desktop",
-        content: "已最小化到托盘。右键图标可退出。",
+        content: "已最小化到托盘。任务完成会在这里提示；右键图标可退出。",
         iconType: "info",
       });
     }
@@ -218,6 +249,152 @@ function destroyTray() {
     /* ignore */
   }
   appTray = null;
+}
+
+/** Debounce main-process done notifications */
+const _mainNotifyAt = new Map();
+
+function isMainWindowVisible() {
+  try {
+    return !!(
+      mainWindow &&
+      !mainWindow.isDestroyed() &&
+      mainWindow.isVisible() &&
+      !mainWindow.isMinimized()
+    );
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * OS notification + tray balloon when window is hidden (minimize-to-tray).
+ * Prefer main-process notify so it still works when renderer is backgrounded.
+ * Durable key (notifyKey) prevents re-notify after app restart.
+ */
+function notifyTaskDoneMain({
+  sessionId,
+  title,
+  body,
+  kind = "turn", // turn | error | goal
+  notifyKey = null, // durable unique id for this completion event
+} = {}) {
+  try {
+    const desk = settings.readDesktopSettings();
+    if (desk.notifyOnDone === false) return { ok: false, reason: "disabled" };
+  } catch {
+    /* default allow */
+  }
+
+  const sid = sessionId || activeSessionId || "x";
+  // Durable: same completion never notifies again (incl. after relaunch)
+  const durable =
+    notifyKey ||
+    `${kind}:${sid}:${String(title || "")}:${String(body || "").slice(0, 120)}`;
+  if (!notified.claim(durable)) {
+    log(`notify skip (already shown): ${String(durable).slice(0, 80)}`);
+    return { ok: false, reason: "already-notified" };
+  }
+
+  const now = Date.now();
+  const key = `${sid}:${kind}`;
+  if (now - (_mainNotifyAt.get(key) || 0) < 1500) {
+    return { ok: false, reason: "debounced" };
+  }
+  _mainNotifyAt.set(key, now);
+
+  const meta =
+    getAgentEntry(sid)?.meta ||
+    (sid === activeSessionId ? activeSessionMeta : null);
+  const sessTitle =
+    meta?.title || meta?.summary || (sid && sid !== "x" ? String(sid).slice(0, 8) : "会话");
+
+  const nTitle =
+    title ||
+    (kind === "error"
+      ? "任务出错"
+      : kind === "goal"
+        ? "目标已完成"
+        : "任务已完成");
+  const nBody =
+    body ||
+    (kind === "error"
+      ? `「${sessTitle}」执行失败`
+      : kind === "goal"
+        ? `目标「${sessTitle}」已完成`
+        : `「${sessTitle}」的对话任务已完成`);
+
+  // Single user-visible alert only (never Notification + balloon together)
+  let notifOk = false;
+  const windowVisible = isMainWindowVisible();
+
+  try {
+    if (process.platform === "win32") {
+      try {
+        app.setAppUserModelId(brand.appUserModelId || "com.luofanglei.grok-desktop");
+      } catch {
+        /* ignore */
+      }
+    }
+    if (Notification.isSupported()) {
+      let icon = undefined;
+      try {
+        if (APP_ICON && fs.existsSync(APP_ICON)) {
+          icon = nativeImage.createFromPath(APP_ICON);
+          if (icon.isEmpty()) icon = undefined;
+        }
+      } catch {
+        icon = undefined;
+      }
+      const n = new Notification({
+        title: String(nTitle),
+        body: String(nBody),
+        silent: false,
+        icon,
+        timeoutType: "default",
+      });
+      n.on("click", () => showMainWindow());
+      n.on("show", () => log(`notify show: ${String(nTitle).slice(0, 40)}`));
+      n.on("failed", (_e, err) => log(`notify failed: ${err}`));
+      n.show();
+      notifOk = true;
+      log(`notifyTaskDoneMain Notification: ${nTitle}`);
+    }
+  } catch (err) {
+    log(`notifyTaskDoneMain Notification error: ${err.message}`);
+  }
+
+  // Tray balloon ONLY if OS toast unavailable (avoid double tip when tray-minimized)
+  if (!notifOk) {
+    try {
+      if (appTray && !windowVisible && process.platform === "win32") {
+        appTray.displayBalloon({
+          title: String(nTitle),
+          content: String(nBody),
+          iconType: kind === "error" ? "error" : "info",
+        });
+        log(`notifyTaskDoneMain balloon fallback: ${nTitle}`);
+        notifOk = true;
+      }
+    } catch (err) {
+      log(`notifyTaskDoneMain balloon error: ${err.message}`);
+    }
+  }
+
+  // In-app toast ONLY if OS notification failed (never both — was showing twice)
+  if (!notifOk && windowVisible && mainWindow && !mainWindow.isDestroyed()) {
+    try {
+      send("app:toast", {
+        text: nBody,
+        kind: kind === "error" ? "error" : "ok",
+        notifyKey: durable,
+      });
+    } catch {
+      /* ignore */
+    }
+  }
+
+  return { ok: notifOk || true, title: nTitle, body: nBody, notifyKey: durable };
 }
 
 /** Primary display metrics for layout / UI-scale decisions in the renderer. */
@@ -989,6 +1166,8 @@ ipcMain.handle("session:prompt", async (_e, payload = {}) => {
 
   const meta = entry?.meta || (sid === activeSessionId ? activeSessionMeta : null);
   if (entry) entry.busy = true;
+  entry.promptSeq = (entry.promptSeq || 0) + 1;
+  const promptSeq = entry.promptSeq;
   send("session:status", {
     state: "working",
     detail: "思考中…",
@@ -1004,15 +1183,34 @@ ipcMain.handle("session:prompt", async (_e, payload = {}) => {
       session: meta,
       sessionId: sid,
     });
+    // Unique key per prompt completion — relaunch will not re-toast this turn
+    notifyTaskDoneMain({
+      sessionId: sid,
+      kind: "turn",
+      notifyKey: `turn:${sid}:${promptSeq}`,
+      title: "任务已完成",
+      body: `「${meta?.title || meta?.summary || sid.slice(0, 8)}」的对话任务已完成`,
+    });
     return { ok: true, sessionId: sid };
   } catch (err) {
     if (entry) entry.busy = false;
+    const msg = err.message || String(err);
     send("session:status", {
       state: "error",
-      detail: err.message || String(err),
+      detail: msg,
       session: meta,
       sessionId: sid,
     });
+    // Don't notify cancel/abort as error popup noise
+    if (!/cancel|abort|中断|停止|disposed/i.test(msg)) {
+      notifyTaskDoneMain({
+        sessionId: sid,
+        kind: "error",
+        notifyKey: `turn-err:${sid}:${promptSeq}:${msg.slice(0, 80)}`,
+        title: "任务出错",
+        body: `「${meta?.title || sid.slice(0, 8)}」：${msg.slice(0, 120)}`,
+      });
+    }
     throw err;
   }
 });
@@ -1562,50 +1760,34 @@ ipcMain.handle("shell:openExternal", async (_e, url) => {
   return { ok: true };
 });
 
-/** 系统通知（对话/目标任务完成等） */
-ipcMain.handle("app:notify", async (_e, { title, body, urgency } = {}) => {
+/** 系统通知（渲染进程也可调用；托盘隐藏时同样走 balloon 兜底） */
+ipcMain.handle("app:notify", async (_e, { title, body, urgency, kind, notifyKey, sessionId } = {}) => {
   try {
-    // Re-assert AppUserModelId before each notify (helps unpackaged `electron .` on Win)
-    if (process.platform === "win32") {
-      try {
-        app.setAppUserModelId(brand.appUserModelId || "com.luofanglei.grok-desktop");
-      } catch {
-        /* ignore */
-      }
-    }
-    if (!Notification.isSupported()) {
-      log("app:notify unsupported on this platform");
-      return { ok: false, reason: "unsupported" };
-    }
-    const icon = fs.existsSync(APP_ICON) ? APP_ICON : undefined;
-    const n = new Notification({
-      title: String(title || "Grok Desktop"),
-      body: String(body || ""),
-      silent: false,
-      icon,
-      timeoutType: "default",
-      ...(process.platform === "linux"
-        ? { urgency: urgency === "critical" ? "critical" : "normal" }
-        : {}),
+    const r = notifyTaskDoneMain({
+      title: title || "Grok Desktop",
+      body: body || "",
+      kind: kind || "turn",
+      sessionId: sessionId || activeSessionId,
+      notifyKey: notifyKey || null,
     });
-    n.on("click", () => {
-      if (mainWindow && !mainWindow.isDestroyed()) {
-        if (mainWindow.isMinimized()) mainWindow.restore();
-        mainWindow.show();
-        mainWindow.focus();
-      }
-    });
-    n.on("failed", (_e, err) => {
-      log(`app:notify failed: ${err}`);
-    });
-    n.show();
-    log(`app:notify shown: ${String(title || "").slice(0, 40)}`);
-    return { ok: true };
+    return { ok: r?.ok !== false, ...(r || {}) };
   } catch (err) {
     log(`app:notify error: ${err.message}`);
     return { ok: false, reason: err.message };
   }
 });
+
+/** Renderer: claim a durable notify key (toast once across restarts) */
+ipcMain.handle("notify:claim", async (_e, key) => {
+  if (!key) return { ok: true, first: true };
+  const first = notified.claim(String(key));
+  return { ok: true, first };
+});
+
+ipcMain.handle("notify:has", async (_e, key) => ({
+  ok: true,
+  has: key ? notified.has(String(key)) : false,
+}));
 
 /**
  * 检查 GitHub 是否有更新（对比 tag / name 中的版本号）

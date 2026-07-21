@@ -16,6 +16,20 @@
   --ok: #4ade80;
   --warn: #fbbf24;
   --err: #fb7185;
+  --composer-bg: rgba(20, 20, 24, 0.96);
+  --composer-border: #2e2e36;
+  --menu-bg: #16161c;
+  --code-bg: #0a0a0c;
+  --scrollbar-thumb: #2e2e36;
+  --scrollbar-thumb-hover: #4b4b55;
+  --user-bubble: rgba(139, 92, 246, 0.18);
+  --asst-bubble: rgba(255, 255, 255, 0.04);
+  --shadow: 0 16px 48px rgba(0, 0, 0, 0.5);
+  color-scheme: dark;
+}
+
+
+:root {
   /* Layout tokens — overridden by media queries / data-layout */
   --side-w: 300px;
   --content: 720px;
@@ -27,7 +41,6 @@
   --radius: 12px;
   --font: "Segoe UI", "PingFang SC", "Noto Sans SC", "Microsoft YaHei", system-ui, sans-serif;
   --mono: ui-monospace, "SF Mono", "Cascadia Code", Menlo, monospace;
-  --shadow: 0 16px 48px rgba(0, 0, 0, 0.5);
 
   /*
    * Type scale (px bases × --font-scale).
@@ -2187,8 +2200,8 @@ body.compact {
 
 .composer {
   width: 100%; max-width: var(--content);
-  background: rgba(20,20,24,.96);
-  border: 1px solid #2e2e36;
+  background: var(--composer-bg);
+  border: 1px solid var(--composer-border);
   border-radius: 16px;
   padding: 10px 12px 8px;
   box-shadow: var(--shadow);
@@ -2376,8 +2389,8 @@ body.compact {
   padding: 8px 0;
   border: 1px solid var(--line) !important;
   border-radius: 14px !important;
-  background: #16161c !important;
-  box-shadow: 0 -8px 32px rgba(0, 0, 0, 0.45), 0 16px 48px rgba(0, 0, 0, 0.35) !important;
+  background: var(--menu-bg) !important;
+  box-shadow: var(--shadow) !important;
   z-index: 90 !important;
   /* Anchor to the left of the + button when opening upward */
   --bs-dropdown-min-width: 280px;
@@ -2947,7 +2960,7 @@ mark.search-hl-mark {
 }
 .settings-card {
   border: 1px solid var(--line-soft); border-radius: 14px;
-  background: rgba(20,20,24,.65); padding: 16px 18px;
+  background: var(--panel); padding: 16px 18px;
 }
 .settings-card h2 {
   margin: 0 0 12px; font-size: var(--fs-md); color: var(--muted);
@@ -2969,79 +2982,7 @@ mark.search-hl-mark {
   border-bottom: 1px solid rgba(39,39,47,.7); font-size: var(--fs-md); color: var(--muted);
 }
 .path-row code {
-  font-family: var(--mono); font-size: var(--fs-sm); color: #d4d4d8;
-  word-break: break-all; background: #0a0a0c; padding: 6px 8px; border-radius: 8px;
-}
-.hint { margin: 12px 0 0; font-size: var(--fs-md); color: var(--ok); min-height: 1.2em; }
-.hint.error { color: var(--err); }
-
-#lightbox {
-  position: fixed; inset: 0; z-index: 10050;
-  background: rgba(0,0,0,.84); display: flex; align-items: center; justify-content: center;
-  padding: 24px; cursor: zoom-out;
-}
-#lightbox.hidden { display: none !important; }
-#lightbox img {
-  max-width: min(96vw, 1200px); max-height: 90vh;
-  border-radius: 12px; box-shadow: var(--shadow);
-}
-
-/* ── Scrollbars (global, thin, dark — Firefox + Chromium/Electron) ── */
-* {
-  scrollbar-width: thin;
-  scrollbar-color: #3f3f46 transparent;
-}
-
-*::-webkit-scrollbar {
-  width: 10px;
-  height: 10px;
-}
-*::-webkit-scrollbar-track {
-  background: transparent;
-}
-*::-webkit-scrollbar-thumb {
-  background: #2e2e36;
-  border-radius: 999px;
-  border: 2px solid transparent;
-  background-clip: padding-box;
-}
-*::-webkit-scrollbar-thumb:hover {
-  background: #4b4b55;
-  border: 2px solid transparent;
-  background-clip: padding-box;
-}
-*::-webkit-scrollbar-thumb:active {
-  background: #8b5cf6;
-  border: 2px solid transparent;
-  background-clip: padding-box;
-}
-*::-webkit-scrollbar-corner {
-  background: transparent;
-}
-
-/* Nested scroll panels — slightly thinner */
-.session-list,
-.thread,
-.card-list,
-.detail-panel,
-.page-body-scroll,
-.settings-grid,
-.model-popover,
-.embed-pre,
-#plan-panel .plan-body,
-.tool-card-body,
-.diff-card-body {
-  scrollbar-width: thin;
-  scrollbar-color: #3f3f46 transparent;
-}
-.session-list::-webkit-scrollbar,
-.thread::-webkit-scrollbar,
-.card-list::-webkit-scrollbar,
-.detail-panel::-webkit-scrollbar,
-.page-body-scroll::-webkit-scrollbar,
-.settings-grid::-webkit-scrollbar,
-.model-popover::-webkit-scrollbar,
-.embed-pre::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
+  font-family: var(--mono); font-size: var(--fs-sm); color: var(--text);
+  word-break: break-all; background: var(--code-bg); padding: 6px 8px; border-radius: 8px;
+  border: 1px solid var(--line-soft);
 }

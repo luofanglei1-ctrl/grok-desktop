@@ -78,6 +78,8 @@ contextBridge.exposeInMainWorld("grokDesktop", {
   diagnose: () => ipcRenderer.invoke("app:diagnose"),
   checkUpdate: () => ipcRenderer.invoke("app:checkUpdate"),
   notify: (payload) => ipcRenderer.invoke("app:notify", payload || {}),
+  claimNotify: (key) => ipcRenderer.invoke("notify:claim", key),
+  hasNotify: (key) => ipcRenderer.invoke("notify:has", key),
   openExternal: (url) => ipcRenderer.invoke("shell:openExternal", url),
   listCommands: (sessionId) => ipcRenderer.invoke("commands:list", { sessionId }),
   listModels: (sessionId) => ipcRenderer.invoke("models:list", { sessionId }),
@@ -97,6 +99,8 @@ contextBridge.exposeInMainWorld("grokDesktop", {
   onPermission: (cb) => on("chat:permission", cb),
   onStatus: (cb) => on("session:status", cb),
   onPlan: (cb) => on("session:plan", cb),
+  /** Main-process single toast (avoids double with OS notify) */
+  onAppToast: (cb) => on("app:toast", cb),
   onAgents: (cb) => on("agents:update", cb),
   onLog: (cb) => on("log", cb),
   onInsertText: (cb) => on("chat:insert-text", cb),

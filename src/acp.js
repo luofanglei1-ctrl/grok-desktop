@@ -402,7 +402,7 @@ class AcpClient extends EventEmitter {
         rawInput: update.rawInput || update.input || null,
         content: update.content || null,
       });
-      this.extractMedia(update);
+      this.extractMedia(update, update.toolCallId);
       return;
     }
     if (kind === "tool_call_update") {
@@ -415,21 +415,39 @@ class AcpClient extends EventEmitter {
         content: update.content || null,
         rawOutput: update.rawOutput || null,
       });
-      this.extractMedia(update);
+      this.extractMedia(update, update.toolCallId);
       return;
     }
     if (kind === "plan") this.emit("plan", update);
   }
 
-  extractMedia(payload) {
+  /**
+   * Extract images from tool payloads once.
+   * @param {object} payload
+   * @param {string} [toolCallId] — same tool must not emit both base64 and path (double display)
+   */
+  extractMedia(payload, toolCallId = null) {
     if (!payload) return;
-    const seen = new Set();
-    const emitPath = (p, mime) => {
-      if (!p || typeof p !== "string" || seen.has(p)) return;
-      if (!fs.existsSync(p)) return;
-      seen.add(p);
-      this.emit("mediaContent", { kind: "path", path: p, mimeType: mime || guessMime(p) });
+    // Session-scoped dedupe (across tool_call / tool_call_update / text paths)
+    if (!this._mediaSeen) this._mediaSeen = new Set();
+    if (!this._toolMediaState) this._toolMediaState = new Map(); // id -> { path: n, b64: n }
+    const paths = [];
+    const b64s = [];
+
+    const collectPath = (p) => {
+      if (!p || typeof p !== "string") return;
+      const norm = path.normalize(p.trim());
+      if (!norm || paths.includes(norm)) return;
+      paths.push(norm);
     };
+    const collectB64 = (data, mime) => {
+      if (!data || typeof data !== "string") return;
+      const mimeType = mime || "image/png";
+      const fp = `b64:${mimeType}:${data.length}:${data.slice(0, 40)}:${data.slice(-20)}`;
+      if (b64s.some((x) => x.fp === fp)) return;
+      b64s.push({ data, mimeType, fp });
+    };
+
     const walk = (node, depth = 0) => {
       if (!node || depth > 8) return;
       if (Array.isArray(node)) {
@@ -438,36 +456,77 @@ class AcpClient extends EventEmitter {
       }
       if (typeof node !== "object") return;
       if (node.type === "image" && node.data) {
-        this.emit("mediaContent", {
-          kind: "base64",
-          mimeType: node.mimeType || "image/png",
-          data: node.data,
-        });
+        collectB64(node.data, node.mimeType || "image/png");
       }
       if (node.type === "resource" && node.uri) {
         const uri = String(node.uri);
         if (uri.startsWith("file://")) {
           try {
-            emitPath(fileURLToPath(uri));
+            collectPath(fileURLToPath(uri));
           } catch {
-            emitPath(uri.slice(7));
+            collectPath(uri.slice(7));
           }
+        } else if (uri.startsWith("/") || /^[A-Za-z]:[\\/]/.test(uri)) {
+          collectPath(uri);
         }
-        else if (uri.startsWith("/")) emitPath(uri);
       }
       if (typeof node.path === "string" && /\.(png|jpe?g|gif|webp|svg)$/i.test(node.path)) {
-        emitPath(node.path);
+        collectPath(node.path);
       }
       if (typeof node.text === "string") {
-        const paths = node.text.match(/\/[^\s"'`]+\.(?:png|jpe?g|gif|webp)/gi) || [];
-        for (const p of paths) emitPath(p);
+        const pathsUnix = node.text.match(/\/[^\s"'`]+\.(?:png|jpe?g|gif|webp)/gi) || [];
+        for (const p of pathsUnix) collectPath(p);
         const winPaths =
           node.text.match(/[A-Za-z]:\\[^\r\n"'`<>|]+\.(?:png|jpe?g|gif|webp)/gi) || [];
-        for (const p of winPaths) emitPath(p);
+        for (const p of winPaths) collectPath(p);
       }
       for (const v of Object.values(node)) walk(v, depth + 1);
     };
     walk(payload);
+
+    const toolState = toolCallId
+      ? this._toolMediaState.get(toolCallId) || { path: 0, b64: 0 }
+      : null;
+
+    // Prefer file paths. If this tool already emitted base64, skip path (same image).
+    // If this tool already emitted path, skip base64.
+    if (paths.length) {
+      if (toolState && toolState.b64 > 0) return;
+      let emitted = 0;
+      for (const p of paths) {
+        if (!fs.existsSync(p)) continue;
+        const key = `path:${path.resolve(p).toLowerCase()}`;
+        if (this._mediaSeen.has(key)) continue;
+        this._mediaSeen.add(key);
+        this.emit("mediaContent", {
+          kind: "path",
+          path: p,
+          mimeType: guessMime(p),
+        });
+        emitted++;
+      }
+      if (toolState && emitted) {
+        toolState.path += emitted;
+        this._toolMediaState.set(toolCallId, toolState);
+      }
+      return;
+    }
+
+    if (toolState && toolState.path > 0) return;
+    for (const img of b64s) {
+      if (this._mediaSeen.has(img.fp)) continue;
+      this._mediaSeen.add(img.fp);
+      this.emit("mediaContent", {
+        kind: "base64",
+        mimeType: img.mimeType,
+        data: img.data,
+        fingerprint: img.fp,
+      });
+      if (toolState) {
+        toolState.b64 += 1;
+        this._toolMediaState.set(toolCallId, toolState);
+      }
+    }
   }
 
   respondOk(id, result = {}) {

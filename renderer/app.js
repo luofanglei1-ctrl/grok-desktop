@@ -409,27 +409,20 @@ function markExpectNotify(sessionId) {
 /**
  * System tray / OS notification when a turn or goal finishes.
  * Controlled by settings.notifyOnDone (default true).
- * Always shows in-app toast; OS notification when supported.
+ * Durable notifyKey: already-shown messages won't reappear after relaunch.
  */
-function notifyTaskFinished({
+async function notifyTaskFinished({
   sessionId,
   kind = "turn", // turn | goal | error
   title,
   body,
   force = false,
+  notifyKey = null,
 } = {}) {
   if (!force && desktopSettings.notifyOnDone === false) return;
   const sid = sessionId || activeId;
   const st = sid ? sessionUi.get(sid) : null;
-
-  // Prefer expectNotifyDone so race (status clears working flags first) still notifies
-  const expect = !!(st && st.expectNotifyDone);
   if (st) st.expectNotifyDone = false;
-
-  const key = `${sid || "x"}:${kind}`;
-  const now = Date.now();
-  if (now - (_notifyDoneAt.get(key) || 0) < 2800) return;
-  _notifyDoneAt.set(key, now);
 
   const sessTitle =
     sessions.find((x) => x.id === sid)?.title ||
@@ -460,7 +453,49 @@ function notifyTaskFinished({
     }
   }
 
-  // In-app toast always (visible when window focused)
+  // Stable durable key (survives restart)
+  const durable =
+    notifyKey ||
+    `${kind}:${sid || "x"}:${String(nTitle)}:${String(nBody).slice(0, 100)}`;
+
+  const now = Date.now();
+  if (now - (_notifyDoneAt.get(durable) || 0) < 1500) return;
+  _notifyDoneAt.set(durable, now);
+
+  // Cross-restart: skip if already shown
+  try {
+    if (typeof grokDesktop.hasNotify === "function") {
+      const h = await grokDesktop.hasNotify(durable);
+      if (h?.has) return;
+    }
+  } catch {
+    /* continue */
+  }
+
+  // turn: main process owns the single notification (OS + optional toast via app:toast).
+  // Do not toast again here — that caused "任务完成提示两次".
+  if (kind === "turn") {
+    return;
+  }
+
+  // goal / error: one OS notify (main claims durable key); toast only if OS skipped
+  if (typeof grokDesktop.notify === "function") {
+    try {
+      const r = await grokDesktop.notify({
+        title: nTitle,
+        body: nBody,
+        kind,
+        sessionId: sid,
+        notifyKey: durable,
+      });
+      if (r && r.reason === "already-notified") return;
+      // Main already shows toast when window visible via app:toast — skip duplicate
+      if (r && r.ok !== false) return;
+    } catch {
+      /* fall through */
+    }
+  }
+
   try {
     if (window.GrokUI?.showToast) {
       GrokUI.showToast(nBody, kind === "error" ? "error" : "ok");
@@ -470,22 +505,70 @@ function notifyTaskFinished({
   } catch {
     /* ignore */
   }
+}
 
-  // OS notification
+/**
+ * Goal/error: single notify path via main (OS toast; in-app toast when window visible).
+ */
+async function notifyGoalOrErrorOnce({
+  sessionId,
+  kind,
+  title,
+  body,
+  notifyKey,
+} = {}) {
+  if (desktopSettings.notifyOnDone === false) return;
+  const durable = notifyKey || `${kind}:${sessionId || activeId}:${body || title || ""}`;
+  const now = Date.now();
+  if (now - (_notifyDoneAt.get(durable) || 0) < 1500) return;
+  _notifyDoneAt.set(durable, now);
+
   if (typeof grokDesktop.notify === "function") {
-    void grokDesktop
-      .notify({ title: nTitle, body: nBody })
-      .then((r) => {
-        if (r && r.ok === false) {
-          console.warn("[notify] OS notification failed:", r.reason);
-        }
-      })
-      .catch((err) => {
-        console.warn("[notify] OS notification error:", err);
+    try {
+      await grokDesktop.notify({
+        title,
+        body,
+        kind,
+        sessionId: sessionId || activeId,
+        notifyKey: durable,
       });
+      // Main shows OS + optional app:toast — do not toast again here
+      return;
+    } catch {
+      /* fall through */
+    }
   }
 
-  void expect; // used for future analytics if needed
+  try {
+    if (window.GrokUI?.showToast) {
+      GrokUI.showToast(body || title, kind === "error" ? "error" : "ok");
+    } else {
+      appendBanner(body || title, kind === "error" ? "error" : "ok");
+    }
+  } catch {
+    /* ignore */
+  }
+}
+
+/**
+ * Show toast only if this durable key was never shown (across restarts).
+ */
+async function toastOnce(key, text, kind = "ok") {
+  if (!text) return;
+  try {
+    if (typeof grokDesktop.claimNotify === "function") {
+      const r = await grokDesktop.claimNotify(key);
+      if (r && r.first === false) return;
+    }
+  } catch {
+    /* show anyway */
+  }
+  try {
+    if (window.GrokUI?.showToast) GrokUI.showToast(text, kind);
+    else appendBanner(text, kind);
+  } catch {
+    /* ignore */
+  }
 }
 
 /**
@@ -534,22 +617,19 @@ function finishTurn(sessionId, { detail, error, silentNotify } = {}) {
   scheduleRenderTabs(true);
   refreshSidebarSessionState();
 
-  // System notification: conversation / task finished
+  // Turn success OS notify: main process (session:prompt) — durable, works when tray-hidden.
+  // Avoid re-toast here so reopen / status races don't show again.
   const stopped = /停止|cancel|abort/i.test(String(detail || ""));
-  if (!silentNotify && (wasWorking || expectNotify) && !stopped) {
-    if (error) {
-      notifyTaskFinished({
-        sessionId,
-        kind: "error",
-        body: String(detail || error),
-      });
-    } else {
-      notifyTaskFinished({ sessionId, kind: "turn" });
-    }
-  } else if (st) {
-    // Don't leave stale flag
-    st.expectNotifyDone = false;
+  if (!silentNotify && (wasWorking || expectNotify) && !stopped && error) {
+    void notifyGoalOrErrorOnce({
+      sessionId,
+      kind: "error",
+      title: t("notify.errorTitle") || "任务出错",
+      body: String(detail || error).slice(0, 160),
+      notifyKey: `turn-err:${sessionId}:${String(detail || error).slice(0, 80)}`,
+    });
   }
+  if (st) st.expectNotifyDone = false;
 }
 
 /** True when this session should accept follow-ups into the queue (not a new prompt). */
@@ -2578,15 +2658,35 @@ function ensureTurnMedia(turn) {
   return row;
 }
 
+/** Stable dedupe key so path vs base64 of the same image only shows once. */
+function mediaDedupeKey(dataUrl, key) {
+  if (key && !String(key).startsWith("data:")) {
+    return `path:${String(key).replace(/\\/g, "/").toLowerCase()}`;
+  }
+  const s = String(dataUrl || "");
+  const m = s.match(/^data:([^;]+);base64,(.+)$/i);
+  if (m) {
+    const b = m[2];
+    return `b64:${m[1]}:${b.length}:${b.slice(0, 40)}:${b.slice(-20)}`;
+  }
+  return s.slice(0, 96);
+}
+
 function addImgToMediaRow(row, dataUrl, key) {
   if (!row || !dataUrl) return null;
-  const k = key || dataUrl.slice(0, 80);
+  const k = mediaDedupeKey(dataUrl, key);
   if (seenMedia.has(k)) return null;
+  // Also skip if same data URL already in this row (DOM-level)
+  if ([...row.querySelectorAll("img")].some((el) => el.src === dataUrl || el.dataset.mediaKey === k)) {
+    seenMedia.add(k);
+    return null;
+  }
   seenMedia.add(k);
   const img = document.createElement("img");
   img.src = dataUrl;
   img.alt = "图片";
   img.loading = "lazy";
+  img.dataset.mediaKey = k;
   img.onclick = () => openLightbox(dataUrl);
   row.appendChild(img);
   return img;
@@ -2598,7 +2698,7 @@ function addImgToMediaRow(row, dataUrl, key) {
  */
 function appendMedia(dataUrl, key, { turn = null, role = "assistant", prefer = "assistant" } = {}) {
   if (!dataUrl) return;
-  const k = key || dataUrl.slice(0, 80);
+  const k = mediaDedupeKey(dataUrl, key);
   if (seenMedia.has(k)) return;
   ui.inner.querySelector(".welcome")?.remove();
 
@@ -2617,7 +2717,7 @@ function appendMedia(dataUrl, key, { turn = null, role = "assistant", prefer = "
     ui.inner.appendChild(host);
   }
   const row = ensureTurnMedia(host);
-  addImgToMediaRow(row, dataUrl, k);
+  addImgToMediaRow(row, dataUrl, key);
   scrollThreadToBottom();
 }
 
@@ -3290,7 +3390,11 @@ function startGoalInteractive() {
   updateModeChip();
   setComposerEnabled(!!activeId);
   refreshSendButtonState();
-  appendBanner(t("goal.awaitBanner") || "已进入目标模式：在输入框写目标并发送", "ok");
+  void toastOnce(
+    "hint:goal-await-input",
+    t("goal.awaitBanner") || "已进入目标模式：在输入框写目标并发送",
+    "ok",
+  );
 }
 
 function cancelPendingGoalInput() {
@@ -3368,30 +3472,31 @@ function applyGoalUpdate(goal, sessionId) {
     if (st) st.goal = currentGoal;
   }
   updateModeChip();
-  // Toast + system notification on terminal states
+  // Toast + system notification once per goal terminal state (survives relaunch)
   if (status === "complete") {
     const obj = (goal.objective || "").trim();
     const short = obj.length > 48 ? obj.slice(0, 48) + "…" : obj;
-    appendBanner(t("goal.done") || "目标已完成", "ok");
-    notifyTaskFinished({
+    const gid = goal.goalId || short || "goal";
+    void notifyGoalOrErrorOnce({
       sessionId: sid || activeId,
       kind: "goal",
       title: t("notify.goalTitle") || "目标已完成",
       body:
         t("notify.goalBody", { title: short || "—" }) ||
         (short ? `目标「${short}」已完成` : t("goal.done") || "目标已完成"),
-      force: true, // always notify goal completion when setting allows... use notifyOnDone
+      notifyKey: `goal:${gid}:complete`,
     });
   } else if (status === "blocked") {
     const msg =
       (t("goal.blocked") || "目标受阻") +
       (goal.pauseMessage ? `：${goal.pauseMessage}` : "");
-    appendBanner(msg, "error");
-    notifyTaskFinished({
+    const gid = goal.goalId || (goal.objective || "").slice(0, 40) || "goal";
+    void notifyGoalOrErrorOnce({
       sessionId: sid || activeId,
       kind: "error",
       title: t("notify.goalBlockedTitle") || "目标受阻",
       body: msg,
+      notifyKey: `goal:${gid}:blocked:${msg.slice(0, 60)}`,
     });
   }
 }
@@ -4496,9 +4601,13 @@ grokDesktop.onMedia((media) => {
     media || {},
     (sid, st, isActive) => {
       if (isActive && connecting) return;
-      // Keep streamingEl so image attaches to the current assistant bubble
+      // Per-session seenMedia (forSession switches maps)
       if (media?.dataUrl) {
-        appendMedia(media.dataUrl, media.path || media.dataUrl.slice(0, 64), {
+        const key =
+          media.fingerprint ||
+          media.path ||
+          mediaDedupeKey(media.dataUrl, media.path);
+        appendMedia(media.dataUrl, key, {
           role: "assistant",
         });
       }
@@ -4542,6 +4651,21 @@ grokDesktop.onAgents?.((info) => {
     renderTabs();
   }
 });
+// Single in-app toast from main (only when OS notify unavailable)
+grokDesktop.onAppToast?.((payload) => {
+  const text = payload?.text;
+  if (!text) return;
+  try {
+    if (window.GrokUI?.showToast) {
+      GrokUI.showToast(text, payload.kind || "ok");
+    } else {
+      appendBanner(text, payload.kind || "ok");
+    }
+  } catch {
+    /* ignore */
+  }
+});
+
 grokDesktop.onStatus(({ state, detail, session, sessionId }) => {
   const sid = sessionId || session?.id || null;
   if (sid) {
@@ -4577,14 +4701,18 @@ grokDesktop.onStatus(({ state, detail, session, sessionId }) => {
         if (wasWorking && (state === "ready" || state === "error")) {
           doneSessions.add(sid);
           // Notify even if promptInFlight still set (race with await returning).
-          // Debounce + expectNotifyDone prevents doubles with finishTurn.
-          if (st.expectNotifyDone || wasWorking) {
-            notifyTaskFinished({
+          // Turn success: main process already notifies (durable).
+          // Only surface errors here; skip "ready" re-toast on reopen.
+          if (state === "error" && (st.expectNotifyDone || wasWorking)) {
+            void notifyGoalOrErrorOnce({
               sessionId: sid,
-              kind: state === "error" ? "error" : "turn",
-              body: state === "error" ? detailText : undefined,
+              kind: "error",
+              title: t("notify.errorTitle") || "任务出错",
+              body: detailText || "error",
+              notifyKey: `status-err:${sid}:${String(detailText || "").slice(0, 80)}`,
             });
           }
+          st.expectNotifyDone = false;
         }
         if (state === "ready" || state === "error" || state === "disconnected") {
           everWorkedSessions.delete(sid);
