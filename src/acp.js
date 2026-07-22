@@ -154,7 +154,7 @@ class AcpClient extends EventEmitter {
         fs: { readTextFile: true, writeTextFile: true },
         terminal: true,
       },
-      clientInfo: { name: "grok-desktop", version: "1.0.5" },
+      clientInfo: { name: "grok-desktop", version: "1.0.6" },
     });
     this.started = true;
     this.emit("initialized");

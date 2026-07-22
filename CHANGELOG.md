@@ -6,7 +6,27 @@
 
 仓库：https://github.com/luofanglei1-ctrl/grok-desktop
 
-> **GitHub Release 正文：** [docs/RELEASE_v1.0.5.md](./docs/RELEASE_v1.0.5.md) · [docs/RELEASE_v1.0.4.md](./docs/RELEASE_v1.0.4.md)
+> **GitHub Release 正文：** [docs/RELEASE_v1.0.6.md](./docs/RELEASE_v1.0.6.md) · [docs/RELEASE_v1.0.5.md](./docs/RELEASE_v1.0.5.md)
+
+---
+
+## [1.0.6] — 2026-07-23
+
+### 新增
+
+- **设置 → CLI 配置**（参考 CC Switch）
+  - 列表 / 启用 / 添加 / 编辑 / 删除 Grok CLI 供应商（`[model.*]`）
+  - 同步 `models.default`、`web_search`、`endpoints.xai_api_base_url`
+  - 预设模板、API Key 脱敏、写前备份 `config.toml.bak`
+
+### 变更
+
+- 版本号 **1.0.6**
+
+### 安装包
+
+- `Grok-Desktop-1.0.6-Windows-Setup-x64.exe`
+- `Grok-Desktop-1.0.6-Windows-Portable-x64.exe`
 
 ---
 
@@ -143,6 +163,7 @@
 
 ---
 
+[1.0.6]: https://github.com/luofanglei1-ctrl/grok-desktop/releases/tag/v1.0.6
 [1.0.5]: https://github.com/luofanglei1-ctrl/grok-desktop/releases/tag/v1.0.5
 [1.0.4]: https://github.com/luofanglei1-ctrl/grok-desktop/releases/tag/v1.0.4
 [1.0.3]: https://github.com/luofanglei1-ctrl/grok-desktop/releases/tag/v1.0.3

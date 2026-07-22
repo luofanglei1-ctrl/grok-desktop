@@ -29,7 +29,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-1.0.5-22C55E?style=flat-square" alt="Version 1.0.5" />
+  <img src="https://img.shields.io/badge/version-1.0.6-22C55E?style=flat-square" alt="Version 1.0.6" />
   <img src="https://img.shields.io/badge/platform-Windows%20%7C%20Linux-334155?style=flat-square" alt="Windows and Linux" />
   <img src="https://img.shields.io/badge/UI-中文%20%7C%20English-E11D48?style=flat-square" alt="Chinese and English UI" />
   <img src="https://img.shields.io/badge/backend-official%20Grok%20CLI-111827?style=flat-square" alt="Official Grok CLI backend" />
@@ -170,8 +170,8 @@ grok login
 
 | 文件 | 说明 |
 |---|---|
-| `Grok-Desktop-1.0.5-Windows-Setup-x64.exe` | 推荐安装版（开始菜单 / 桌面快捷方式）。 |
-| `Grok-Desktop-1.0.5-Windows-Portable-x64.exe` | 免安装便携版。 |
+| `Grok-Desktop-1.0.6-Windows-Setup-x64.exe` | 推荐安装版（开始菜单 / 桌面快捷方式）。 |
+| `Grok-Desktop-1.0.6-Windows-Portable-x64.exe` | 免安装便携版。 |
 
 首次使用：确认 CLI → `grok login` → 启动桌面版 → 完成环境检测 → **新对话** 选择工作目录。
 
@@ -346,10 +346,14 @@ Auth stays with the official CLI. Desktop settings are local only. Do not use Fu
 | 文档 | 说明 |
 |------|------|
 | [CHANGELOG.md](./CHANGELOG.md) | 完整版本变更记录 |
-| [docs/RELEASE_v1.0.5.md](./docs/RELEASE_v1.0.5.md) | **v1.0.5 GitHub Release 正文** |
-| [docs/RELEASE_v1.0.4.md](./docs/RELEASE_v1.0.4.md) | v1.0.4 发布说明 |
+| [docs/RELEASE_v1.0.6.md](./docs/RELEASE_v1.0.6.md) | **v1.0.6 GitHub Release 正文** |
+| [docs/RELEASE_v1.0.5.md](./docs/RELEASE_v1.0.5.md) | v1.0.5 发布说明 |
 | [docs/ABOUT.md](./docs/ABOUT.md) | 维护者与品牌信息 |
 | [docs/THEME-SWITCH-DESIGN.md](./docs/THEME-SWITCH-DESIGN.md) | 主题切换设计（深色 / 普通浅色） |
+
+### 1.0.6 摘要
+
+- 设置内 CLI 配置：供应商一键切换（参考 CC Switch）
 
 ### 1.0.5 摘要
 
@@ -366,7 +370,7 @@ Auth stays with the official CLI. Desktop settings are local only. Do not use Fu
 ---
 
 <p align="center">
-  <strong>Grok Desktop 1.0.5</strong><br />
+  <strong>Grok Desktop 1.0.6</strong><br />
   Windows &amp; Linux · Official Grok CLI<br />
   by <strong>luofanglei</strong> ·
   <a href="https://github.com/luofanglei1-ctrl/grok-desktop">luofanglei1-ctrl/grok-desktop</a>
