@@ -18,6 +18,53 @@ function guessMime(p) {
 }
 
 /**
+ * JSON-RPC errors are plain objects `{ code, message, data }`.
+ * Electron IPC only serializes Error.message cleanly — plain objects become
+ * "Error invoking remote method …: [object Object]". Always convert first.
+ */
+function toError(err) {
+  if (err instanceof Error) return err;
+  if (err == null) return new Error("Unknown error");
+  if (typeof err === "string") return new Error(err);
+  if (typeof err === "object") {
+    const raw =
+      err.message ||
+      err.msg ||
+      err.error ||
+      err.detail ||
+      err.reason ||
+      null;
+    let msg =
+      typeof raw === "string"
+        ? raw
+        : raw != null
+          ? (() => {
+              try {
+                return JSON.stringify(raw);
+              } catch {
+                return String(raw);
+              }
+            })()
+          : null;
+    if (!msg) {
+      try {
+        msg = JSON.stringify(err);
+      } catch {
+        msg = String(err);
+      }
+    }
+    if (err.code != null && !/code\s*[:=]/i.test(msg)) {
+      msg = `[${err.code}] ${msg}`;
+    }
+    const e = new Error(msg);
+    if (err.code != null) e.code = err.code;
+    if (err.data !== undefined) e.data = err.data;
+    return e;
+  }
+  return new Error(String(err));
+}
+
+/**
  * ACP client for `grok agent --always-approve stdio`.
  * hydrateMode mutes history replay streams during session/load.
  */
@@ -107,7 +154,7 @@ class AcpClient extends EventEmitter {
         fs: { readTextFile: true, writeTextFile: true },
         terminal: true,
       },
-      clientInfo: { name: "grok-desktop", version: "1.0.4" },
+      clientInfo: { name: "grok-desktop", version: "1.0.5" },
     });
     this.started = true;
     this.emit("initialized");
@@ -204,7 +251,7 @@ class AcpClient extends EventEmitter {
         this.emit("mode", id);
         return res;
       } catch {
-        throw err;
+        throw toError(err);
       }
     }
   }
@@ -281,8 +328,11 @@ class AcpClient extends EventEmitter {
       if (p) {
         this.pending.delete(msg.id);
         if (p.timer) clearTimeout(p.timer);
-        if (msg.error) p.reject(msg.error);
-        else p.resolve(msg.result);
+        if (msg.error) {
+          const err = toError(msg.error);
+          this.log(`[acp] rpc error id=${msg.id}: ${err.message}`);
+          p.reject(err);
+        } else p.resolve(msg.result);
       }
       return;
     }

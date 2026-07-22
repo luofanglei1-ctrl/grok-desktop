@@ -6,7 +6,27 @@
 
 仓库：https://github.com/luofanglei1-ctrl/grok-desktop
 
-> **GitHub Release 正文：** [docs/RELEASE_v1.0.4.md](./docs/RELEASE_v1.0.4.md) · [docs/RELEASE_v1.0.3.md](./docs/RELEASE_v1.0.3.md)
+> **GitHub Release 正文：** [docs/RELEASE_v1.0.5.md](./docs/RELEASE_v1.0.5.md) · [docs/RELEASE_v1.0.4.md](./docs/RELEASE_v1.0.4.md)
+
+---
+
+## [1.0.5] — 2026-07-22
+
+### 修复
+
+- **发送失败不再显示 `[object Object]`**
+  - ACP JSON-RPC 错误对象转为真正的 `Error`（含 `message` / `code`）
+  - `session:prompt` / `session:run-slash` IPC 兜底序列化
+  - 渲染进程剥离 Electron invoke 包装前缀，展示可读错误
+
+### 变更
+
+- 版本号 **1.0.5**
+
+### 安装包
+
+- `Grok-Desktop-1.0.5-Windows-Setup-x64.exe`
+- `Grok-Desktop-1.0.5-Windows-Portable-x64.exe`
 
 ---
 
@@ -123,6 +143,7 @@
 
 ---
 
+[1.0.5]: https://github.com/luofanglei1-ctrl/grok-desktop/releases/tag/v1.0.5
 [1.0.4]: https://github.com/luofanglei1-ctrl/grok-desktop/releases/tag/v1.0.4
 [1.0.3]: https://github.com/luofanglei1-ctrl/grok-desktop/releases/tag/v1.0.3
 [1.0.2]: https://github.com/luofanglei1-ctrl/grok-desktop/releases/tag/v1.0.2

@@ -57,6 +57,44 @@ function log(msg) {
   send("log", line);
 }
 
+/**
+ * Ensure IPC handlers always throw real Error instances with a string message.
+ * Plain objects become "[object Object]" on the renderer side.
+ */
+function asIpcError(err) {
+  if (err instanceof Error) return err;
+  if (err == null) return new Error("Unknown error");
+  if (typeof err === "string") return new Error(err);
+  if (typeof err === "object") {
+    const raw = err.message || err.msg || err.error || err.detail || err.reason;
+    let msg =
+      typeof raw === "string"
+        ? raw
+        : raw != null
+          ? (() => {
+              try {
+                return JSON.stringify(raw);
+              } catch {
+                return String(raw);
+              }
+            })()
+          : null;
+    if (!msg) {
+      try {
+        msg = JSON.stringify(err);
+      } catch {
+        msg = String(err);
+      }
+    }
+    return new Error(msg);
+  }
+  return new Error(String(err));
+}
+
+function errorMessage(err) {
+  return asIpcError(err).message;
+}
+
 function send(channel, payload) {
   try {
     if (mainWindow && !mainWindow.isDestroyed()) {
@@ -1222,7 +1260,9 @@ ipcMain.handle("session:prompt", async (_e, payload = {}) => {
       entry.busy = false;
       entry.userPromptActive = false;
     }
-    const msg = err.message || String(err);
+    const ipcErr = asIpcError(err);
+    const msg = ipcErr.message;
+    log(`session:prompt failed sid=${sid}: ${msg}`);
     send("session:status", {
       state: "error",
       detail: msg,
@@ -1239,7 +1279,7 @@ ipcMain.handle("session:prompt", async (_e, payload = {}) => {
         body: `「${meta?.title || sid.slice(0, 8)}」：${msg.slice(0, 120)}`,
       });
     }
-    throw err;
+    throw ipcErr;
   }
 });
 
@@ -1606,13 +1646,15 @@ ipcMain.handle("session:run-slash", async (_e, { command, args, sessionId } = {}
     });
     return { ok: true };
   } catch (err) {
+    const ipcErr = asIpcError(err);
+    log(`session:run-slash failed: ${ipcErr.message}`);
     send("session:status", {
       state: "error",
-      detail: err.message,
+      detail: ipcErr.message,
       session: meta,
       sessionId: sid,
     });
-    throw err;
+    throw ipcErr;
   }
 });
 

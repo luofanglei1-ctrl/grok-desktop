@@ -7,6 +7,44 @@
 
 const $ = (id) => document.getElementById(id);
 
+/**
+ * Normalize errors from ipcRenderer.invoke.
+ * Electron wraps rejections as: Error invoking remote method 'x': …
+ * and plain objects used to become "[object Object]".
+ */
+function formatIpcError(err) {
+  let msg = "";
+  if (err == null) msg = "";
+  else if (typeof err === "string") msg = err;
+  else if (err instanceof Error) msg = err.message || String(err);
+  else if (typeof err === "object") {
+    msg = err.message || err.msg || err.error || err.detail || "";
+    if (typeof msg !== "string") {
+      try {
+        msg = JSON.stringify(msg);
+      } catch {
+        msg = String(msg);
+      }
+    }
+    if (!msg || msg === "[object Object]") {
+      try {
+        msg = JSON.stringify(err);
+      } catch {
+        msg = String(err);
+      }
+    }
+  } else msg = String(err);
+
+  msg = String(msg || "").trim();
+  // Strip Electron invoke wrapper
+  msg = msg.replace(
+    /^Error invoking remote method ['"][^'"]+['"]:\s*(?:Error:\s*)?/i,
+    "",
+  );
+  if (!msg || msg === "[object Object]") msg = "未知错误（主进程未返回可读信息）";
+  return msg;
+}
+
 /** Bootstrap Modal dialog (prompt / confirm) — does not reflow layout */
 function askModal(opts) {
   if (window.GrokUI?.askModal) return GrokUI.askModal(opts);
@@ -4925,7 +4963,7 @@ async function send() {
   try {
     await sendNow({ text, images, files });
   } catch (err) {
-    const msg = String(err?.message || err || "");
+    const msg = formatIpcError(err);
     // 主进程仍忙 → 先进排队，由用户点「引导」
     if (/仍在处理|上一轮|busy|处理中/i.test(msg)) {
       enqueueFollowUp({ text, images, files });
@@ -5058,7 +5096,7 @@ async function sendNow({ text, images, files, sessionId = null, generation = nul
       sessionId: sentTo,
     });
   } catch (err) {
-    const msg = String(err?.message || err || "");
+    const msg = formatIpcError(err);
     if (/cancel|abort|中断|停止|disposed/i.test(msg)) {
       turnError = null;
     } else if (/仍在处理|上一轮|busy|处理中/i.test(msg)) {
