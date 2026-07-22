@@ -2516,7 +2516,372 @@ function showSettingsPanel(id) {
   if (settingsPanel === "skills") void fillSettingsSkills();
   if (settingsPanel === "plugins") void fillSettingsPlugins();
   if (settingsPanel === "mcp") void fillSettingsMcp();
+  if (settingsPanel === "cli") void fillCliProviders();
 }
+
+// ── CLI providers (ccswitch-style) ─────────────────────
+let cliProvidersState = { providers: [], presets: [], defaultModel: null };
+let cliProviderEditId = null; // null = add mode
+let cliProviderModal = null;
+
+function ensureCliProviderModal() {
+  if (cliProviderModal || typeof bootstrap === "undefined") return cliProviderModal;
+  const el = $("cli-provider-modal");
+  if (!el) return null;
+  cliProviderModal = bootstrap.Modal.getOrCreateInstance(el);
+  return cliProviderModal;
+}
+
+async function fillCliProviders() {
+  const list = $("cli-provider-list");
+  const curLab = $("cli-current-label");
+  const pathEl = $("cli-config-path");
+  const baseIn = $("cli-xai-base");
+  if (!list) return;
+  list.innerHTML = `<div class="cli-provider-empty">${t("settings.cli.refresh") || "…"}</div>`;
+  try {
+    const data = await grokDesktop.listCliProviders();
+    cliProvidersState = data || { providers: [], presets: [] };
+    if (pathEl) pathEl.textContent = data.configPath || "~/.grok/config.toml";
+    if (baseIn) baseIn.value = data.xaiApiBaseUrl || "";
+
+    const active = (data.providers || []).find((p) => p.active);
+    if (curLab) {
+      curLab.textContent = active
+        ? `${active.name || active.id} · ${active.model || "—"} · ${active.base_url || "—"}`
+        : data.defaultModel
+          ? String(data.defaultModel)
+          : "—";
+    }
+    const badge = $("cli-current-badge");
+    if (badge) badge.classList.toggle("d-none", !active && !data.defaultModel);
+
+    renderCliProviderList(data.providers || []);
+    fillCliPresetSelect(data.presets || []);
+  } catch (err) {
+    list.innerHTML = `<div class="list-error">${formatIpcError(err)}</div>`;
+  }
+}
+
+function fillCliPresetSelect(presets) {
+  const sel = $("cli-f-preset");
+  if (!sel) return;
+  const keep = sel.value;
+  sel.replaceChildren();
+  const o0 = document.createElement("option");
+  o0.value = "";
+  o0.textContent = t("settings.cli.presetNone") || "自定义…";
+  sel.appendChild(o0);
+  for (const p of presets) {
+    const o = document.createElement("option");
+    o.value = p.id;
+    o.textContent = p.name || p.id;
+    sel.appendChild(o);
+  }
+  if ([...sel.options].some((o) => o.value === keep)) sel.value = keep;
+}
+
+function renderCliProviderList(providers) {
+  const list = $("cli-provider-list");
+  if (!list) return;
+  list.replaceChildren();
+  if (!providers.length) {
+    list.innerHTML = `<div class="cli-provider-empty">${t("settings.cli.empty") || "暂无供应商"}</div>`;
+    return;
+  }
+  for (const p of providers) {
+    const card = document.createElement("div");
+    card.className = "cli-provider-card" + (p.active ? " is-active" : "");
+    card.dataset.id = p.id;
+
+    const top = document.createElement("div");
+    top.className = "cli-prov-top";
+    const left = document.createElement("div");
+    const title = document.createElement("div");
+    title.className = "cli-prov-title";
+    title.textContent = p.name || p.id;
+    const idEl = document.createElement("div");
+    idEl.className = "cli-prov-id";
+    idEl.textContent = `[model.${p.id}]`;
+    left.append(title, idEl);
+    top.appendChild(left);
+    if (p.active) {
+      const b = document.createElement("span");
+      b.className = "badge text-bg-success";
+      b.textContent = t("settings.cli.active") || "使用中";
+      top.appendChild(b);
+    }
+    card.appendChild(top);
+
+    const meta = document.createElement("div");
+    meta.className = "cli-prov-meta";
+    const parts = [
+      ["model", p.model || "—"],
+      ["url", p.base_url || "—"],
+      ["key", p.hasApiKey ? p.api_key_masked : t("settings.cli.noKey") || "未配置 Key"],
+      ["backend", p.api_backend || "—"],
+    ];
+    if (p.context_window) parts.push(["ctx", String(p.context_window)]);
+    for (const [k, v] of parts) {
+      const span = document.createElement("span");
+      span.innerHTML = `<span class="text-secondary">${k}</span> <code></code>`;
+      span.querySelector("code").textContent = v;
+      meta.appendChild(span);
+    }
+    if (p.description) {
+      const d = document.createElement("span");
+      d.className = "w-100";
+      d.textContent = p.description;
+      meta.appendChild(d);
+    }
+    card.appendChild(meta);
+
+    const actions = document.createElement("div");
+    actions.className = "cli-prov-actions";
+    const btnEnable = document.createElement("button");
+    btnEnable.type = "button";
+    btnEnable.className = p.active ? "btn btn-success btn-sm" : "btn btn-primary btn-sm";
+    btnEnable.disabled = !!p.active;
+    btnEnable.textContent = p.active
+      ? t("settings.cli.enabled") || "已启用"
+      : t("settings.cli.enable") || "启用";
+    btnEnable.onclick = () => void switchCliProvider(p.id, p.name);
+    const btnEdit = document.createElement("button");
+    btnEdit.type = "button";
+    btnEdit.className = "btn btn-outline-secondary btn-sm";
+    btnEdit.textContent = t("settings.cli.editBtn") || "编辑";
+    btnEdit.onclick = () => void openCliProviderModal(p.id);
+    const btnDel = document.createElement("button");
+    btnDel.type = "button";
+    btnDel.className = "btn btn-outline-danger btn-sm";
+    btnDel.textContent = t("settings.cli.delete") || "删除";
+    btnDel.onclick = () => void deleteCliProvider(p);
+    actions.append(btnEnable, btnEdit, btnDel);
+    card.appendChild(actions);
+    list.appendChild(card);
+  }
+}
+
+async function switchCliProvider(id, name) {
+  try {
+    const res = await grokDesktop.switchCliProvider(id);
+    if (!res?.ok) {
+      GrokUI?.showToast?.(res?.error || "切换失败", "error");
+      return;
+    }
+    cliProvidersState = res;
+    renderCliProviderList(res.providers || []);
+    if ($("cli-current-label")) {
+      const active = (res.providers || []).find((x) => x.active);
+      $("cli-current-label").textContent = active
+        ? `${active.name || active.id} · ${active.model || ""} · ${active.base_url || ""}`
+        : id;
+    }
+    if ($("cli-xai-base")) $("cli-xai-base").value = res.xaiApiBaseUrl || "";
+    const msg = (t("settings.cli.switched") || "已切换到 {name}").replace(
+      "{name}",
+      name || id,
+    );
+    GrokUI?.showToast?.(msg, "ok");
+    // refresh model dropdown if present
+    try {
+      const s = await grokDesktop.getSettings();
+      if (s?.models && $("set-model")) {
+        /* keep UI in sync later via fillSettings */
+      }
+    } catch {
+      /* ignore */
+    }
+  } catch (err) {
+    GrokUI?.showToast?.(formatIpcError(err), "error");
+  }
+}
+
+async function deleteCliProvider(p) {
+  const ok = await askConfirm({
+    title: t("settings.cli.delete") || "删除",
+    message: (t("settings.cli.deleteConfirm") || "确定删除「{name}」？").replace(
+      "{name}",
+      p.name || p.id,
+    ),
+    danger: true,
+  });
+  if (!ok) return;
+  try {
+    const res = await grokDesktop.deleteCliProvider(p.id);
+    if (!res?.ok) {
+      GrokUI?.showToast?.(res?.error || "删除失败", "error");
+      return;
+    }
+    cliProvidersState = res;
+    renderCliProviderList(res.providers || []);
+    if ($("cli-current-label")) {
+      const active = (res.providers || []).find((x) => x.active);
+      $("cli-current-label").textContent = active
+        ? `${active.name || active.id} · ${active.model || ""}`
+        : "—";
+    }
+    GrokUI?.showToast?.(t("settings.cli.deleted") || "已删除", "ok");
+  } catch (err) {
+    GrokUI?.showToast?.(formatIpcError(err), "error");
+  }
+}
+
+function clearCliProviderForm() {
+  const set = (id, v) => {
+    const el = $(id);
+    if (el) el.value = v ?? "";
+  };
+  set("cli-f-id", "");
+  set("cli-f-name", "");
+  set("cli-f-model", "");
+  set("cli-f-base", "");
+  set("cli-f-key", "");
+  set("cli-f-desc", "");
+  set("cli-f-ctx", "1000000");
+  if ($("cli-f-backend")) $("cli-f-backend").value = "responses";
+  if ($("cli-f-search")) $("cli-f-search").checked = false;
+  if ($("cli-f-default")) $("cli-f-default").checked = true;
+  if ($("cli-f-preset")) $("cli-f-preset").value = "";
+  if ($("cli-f-error")) {
+    $("cli-f-error").classList.add("d-none");
+    $("cli-f-error").textContent = "";
+  }
+}
+
+async function openCliProviderModal(editId = null) {
+  cliProviderEditId = editId;
+  clearCliProviderForm();
+  const title = $("cli-provider-modal-title");
+  const idInput = $("cli-f-id");
+  if (title) {
+    title.textContent = editId
+      ? t("settings.cli.edit") || "编辑供应商"
+      : t("settings.cli.add") || "添加供应商";
+  }
+  if (idInput) idInput.disabled = !!editId;
+  if ($("cli-preset-wrap")) $("cli-preset-wrap").classList.toggle("d-none", !!editId);
+
+  if (editId) {
+    try {
+      const p = await grokDesktop.getCliProvider(editId, false);
+      if (p) {
+        if ($("cli-f-id")) $("cli-f-id").value = p.id || "";
+        if ($("cli-f-name")) $("cli-f-name").value = p.name || "";
+        if ($("cli-f-model")) $("cli-f-model").value = p.model || "";
+        if ($("cli-f-base")) $("cli-f-base").value = p.base_url || "";
+        if ($("cli-f-desc")) $("cli-f-desc").value = p.description || "";
+        if ($("cli-f-backend")) $("cli-f-backend").value = p.api_backend || "responses";
+        if ($("cli-f-ctx")) $("cli-f-ctx").value = p.context_window || "";
+        if ($("cli-f-search")) $("cli-f-search").checked = !!p.supports_backend_search;
+        if ($("cli-f-key")) {
+          $("cli-f-key").value = "";
+          $("cli-f-key").placeholder = p.hasApiKey
+            ? p.api_key_masked || "••••"
+            : "sk-…";
+        }
+        if ($("cli-f-default")) $("cli-f-default").checked = !!p.active;
+      }
+    } catch (err) {
+      GrokUI?.showToast?.(formatIpcError(err), "error");
+    }
+  } else if ($("cli-f-key")) {
+    $("cli-f-key").placeholder = "sk-…";
+  }
+
+  fillCliPresetSelect(cliProvidersState.presets || []);
+  ensureCliProviderModal()?.show();
+}
+
+function applyCliPreset(presetId) {
+  const p = (cliProvidersState.presets || []).find((x) => x.id === presetId);
+  if (!p) return;
+  if ($("cli-f-id") && !$("cli-f-id").disabled) $("cli-f-id").value = p.id || "";
+  if ($("cli-f-name")) $("cli-f-name").value = p.name || "";
+  if ($("cli-f-model")) $("cli-f-model").value = p.model || "";
+  if ($("cli-f-base")) $("cli-f-base").value = p.base_url || "";
+  if ($("cli-f-desc")) $("cli-f-desc").value = p.description || "";
+  if ($("cli-f-backend")) $("cli-f-backend").value = p.api_backend || "responses";
+  if ($("cli-f-ctx") && p.context_window) $("cli-f-ctx").value = p.context_window;
+}
+
+async function saveCliProviderFromForm() {
+  const errEl = $("cli-f-error");
+  const showErr = (msg) => {
+    if (!errEl) return;
+    errEl.textContent = msg;
+    errEl.classList.remove("d-none");
+  };
+  if (errEl) {
+    errEl.classList.add("d-none");
+    errEl.textContent = "";
+  }
+  const payload = {
+    isNew: !cliProviderEditId,
+    id: $("cli-f-id")?.value?.trim(),
+    name: $("cli-f-name")?.value?.trim(),
+    model: $("cli-f-model")?.value?.trim(),
+    base_url: $("cli-f-base")?.value?.trim(),
+    api_key: $("cli-f-key")?.value?.trim(),
+    description: $("cli-f-desc")?.value?.trim(),
+    api_backend: $("cli-f-backend")?.value || "responses",
+    context_window: $("cli-f-ctx")?.value,
+    supports_backend_search: !!$("cli-f-search")?.checked,
+    makeDefault: !!$("cli-f-default")?.checked,
+  };
+  try {
+    const res = await grokDesktop.saveCliProvider(payload);
+    if (!res?.ok) {
+      showErr(res?.error || "保存失败");
+      return;
+    }
+    cliProvidersState = res;
+    ensureCliProviderModal()?.hide();
+    renderCliProviderList(res.providers || []);
+    if ($("cli-current-label")) {
+      const active = (res.providers || []).find((x) => x.active);
+      $("cli-current-label").textContent = active
+        ? `${active.name || active.id} · ${active.model || ""} · ${active.base_url || ""}`
+        : "—";
+    }
+    if ($("cli-xai-base")) $("cli-xai-base").value = res.xaiApiBaseUrl || "";
+    GrokUI?.showToast?.(t("settings.cli.saved") || "供应商已保存", "ok");
+  } catch (err) {
+    showErr(formatIpcError(err));
+  }
+}
+
+$("cli-provider-add")?.addEventListener("click", () => void openCliProviderModal(null));
+$("cli-refresh")?.addEventListener("click", () => void fillCliProviders());
+$("cli-open-config")?.addEventListener("click", async () => {
+  try {
+    await grokDesktop.openCliConfigDir();
+  } catch (err) {
+    GrokUI?.showToast?.(formatIpcError(err), "error");
+  }
+});
+$("cli-xai-save")?.addEventListener("click", async () => {
+  try {
+    const res = await grokDesktop.saveCliEndpoints({
+      xaiApiBaseUrl: $("cli-xai-base")?.value?.trim() || "",
+    });
+    if (!res?.ok) {
+      GrokUI?.showToast?.(res?.error || "保存失败", "error");
+      return;
+    }
+    GrokUI?.showToast?.(t("settings.cli.endpointSaved") || "端点已保存", "ok");
+  } catch (err) {
+    GrokUI?.showToast?.(formatIpcError(err), "error");
+  }
+});
+$("cli-provider-save")?.addEventListener("click", () => void saveCliProviderFromForm());
+$("cli-f-preset")?.addEventListener("change", (e) => {
+  const v = e.target?.value;
+  if (v) applyCliPreset(v);
+});
+$("settings-goto-cli")?.addEventListener("click", () => {
+  showSettingsPanel("cli");
+});
 
 async function fillSettingsSkills() {
   const box = $("settings-skills-list");

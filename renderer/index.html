@@ -428,6 +428,7 @@
               <button type="button" class="sn-item active" data-panel="general">⚙ <span data-i18n="settings.general">常规</span></button>
               <button type="button" class="sn-item" data-panel="appearance">◐ <span data-i18n="settings.appearance">外观</span></button>
               <button type="button" class="sn-item" data-panel="model">✦ <span data-i18n="settings.model">模型</span></button>
+              <button type="button" class="sn-item" data-panel="cli">⇄ <span data-i18n="settings.cli">CLI 配置</span></button>
               <button type="button" class="sn-item" data-panel="memory">🧠 <span data-i18n="settings.memory">记忆</span></button>
               <div class="sn-group" data-i18n="settings.group.security">权限与安全</div>
               <button type="button" class="sn-item" data-panel="permissions">🛡 <span data-i18n="settings.permissions">权限</span></button>
@@ -603,6 +604,60 @@
                   </div>
                   <select id="set-model"></select>
                 </div>
+              </div>
+              <p class="settings-lead mt-3 mb-0">
+                <button type="button" class="btn btn-outline-secondary btn-sm" id="settings-goto-cli" data-i18n="settings.cliGoto">
+                  管理供应商 / API（CLI 配置）→
+                </button>
+              </p>
+            </div>
+
+            <div class="settings-panel" id="panel-cli" data-panel="cli">
+              <h1 data-i18n="settings.cli">CLI 配置</h1>
+              <p class="settings-lead" data-i18n="settings.cliLead">
+                类似 CC Switch：管理 Grok CLI 供应商、API Key 与端点，一键切换并写入 ~/.grok/config.toml
+              </p>
+
+              <div class="scard">
+                <div class="scard-row">
+                  <div>
+                    <div class="scard-title" data-i18n="settings.cli.current">当前供应商</div>
+                    <div class="scard-desc" id="cli-current-label">—</div>
+                  </div>
+                  <span class="badge text-bg-success" id="cli-current-badge" data-i18n="settings.cli.active">使用中</span>
+                </div>
+                <div class="scard-row">
+                  <div>
+                    <div class="scard-title" data-i18n="settings.cli.configFile">配置文件</div>
+                    <div class="scard-desc font-monospace small" id="cli-config-path">~/.grok/config.toml</div>
+                  </div>
+                  <div class="d-flex gap-2">
+                    <button type="button" class="btn btn-outline-secondary btn-sm" id="cli-open-config" data-i18n="settings.cli.openDir">打开目录</button>
+                    <button type="button" class="btn btn-outline-secondary btn-sm" id="cli-refresh" data-i18n="settings.cli.refresh">刷新</button>
+                  </div>
+                </div>
+              </div>
+
+              <div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-2 mt-3">
+                <div class="scard-head mb-0" data-i18n="settings.cli.providers">供应商 Providers</div>
+                <button type="button" class="btn btn-primary btn-sm" id="cli-provider-add" data-i18n="settings.cli.add">+ 添加供应商</button>
+              </div>
+              <div id="cli-provider-list" class="cli-provider-list" aria-live="polite"></div>
+
+              <div class="scard mt-3">
+                <div class="scard-head" data-i18n="settings.cli.endpoint">全局 API 端点</div>
+                <div class="scard-pad">
+                  <label class="form-label small text-secondary" for="cli-xai-base" data-i18n="settings.cli.xaiBase">endpoints.xai_api_base_url</label>
+                  <div class="input-group input-group-sm">
+                    <input type="url" class="form-control form-control-sm" id="cli-xai-base" placeholder="https://api.x.ai/v1" autocomplete="off" />
+                    <button type="button" class="btn btn-outline-primary" id="cli-xai-save" data-i18n="settings.cli.saveEndpoint">保存端点</button>
+                  </div>
+                  <p class="form-text mb-0" data-i18n="settings.cli.endpointHint">启用供应商时会同步写入该供应商的 base_url</p>
+                </div>
+              </div>
+
+              <div class="alert alert-secondary small mt-3 mb-0" role="note" data-i18n="settings.cli.note">
+                切换供应商后，新会话与 CLI 默认模型即生效；已打开会话可在顶栏重新选模型或重启会话。
               </div>
             </div>
 
@@ -878,6 +933,82 @@
       <span id="update-banner-text">发现新版本</span>
       <button type="button" class="btn btn-primary btn-sm" id="update-banner-open" data-i18n="update.view">查看</button>
       <button type="button" class="btn btn-outline-secondary btn-sm" id="update-banner-dismiss" data-i18n="update.dismiss">关闭</button>
+    </div>
+
+    <!-- CLI Provider Modal (add / edit) -->
+    <div class="modal fade" id="cli-provider-modal" tabindex="-1" aria-labelledby="cli-provider-modal-title" aria-hidden="true">
+      <div class="modal-dialog modal-dialog-centered modal-lg modal-dialog-scrollable">
+        <div class="modal-content">
+          <div class="modal-header border-secondary-subtle">
+            <h5 class="modal-title" id="cli-provider-modal-title" data-i18n="settings.cli.add">添加供应商</h5>
+            <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+          </div>
+          <div class="modal-body">
+            <div class="mb-3" id="cli-preset-wrap">
+              <label class="form-label small" for="cli-f-preset" data-i18n="settings.cli.preset">从预设填充</label>
+              <select class="form-select form-select-sm" id="cli-f-preset">
+                <option value="" data-i18n="settings.cli.presetNone">自定义…</option>
+              </select>
+            </div>
+            <div class="row g-2">
+              <div class="col-md-6">
+                <label class="form-label small" for="cli-f-id">ID</label>
+                <input class="form-control form-control-sm" id="cli-f-id" placeholder="my-provider" autocomplete="off" />
+                <div class="form-text" data-i18n="settings.cli.idHint">小写字母数字，写入 [model.&lt;id&gt;]</div>
+              </div>
+              <div class="col-md-6">
+                <label class="form-label small" for="cli-f-name" data-i18n="settings.cli.name">显示名称</label>
+                <input class="form-control form-control-sm" id="cli-f-name" placeholder="My Provider" autocomplete="off" />
+              </div>
+              <div class="col-md-6">
+                <label class="form-label small" for="cli-f-model" data-i18n="settings.cli.upstreamModel">上游模型 model</label>
+                <input class="form-control form-control-sm" id="cli-f-model" placeholder="grok-4.5" autocomplete="off" />
+              </div>
+              <div class="col-md-6">
+                <label class="form-label small" for="cli-f-backend" data-i18n="settings.cli.backend">api_backend</label>
+                <select class="form-select form-select-sm" id="cli-f-backend">
+                  <option value="responses">responses</option>
+                  <option value="chat_completions">chat_completions</option>
+                </select>
+              </div>
+              <div class="col-12">
+                <label class="form-label small" for="cli-f-base" data-i18n="settings.cli.baseUrl">Base URL</label>
+                <input class="form-control form-control-sm" id="cli-f-base" type="url" placeholder="https://api.x.ai/v1" autocomplete="off" />
+              </div>
+              <div class="col-12">
+                <label class="form-label small" for="cli-f-key" data-i18n="settings.cli.apiKey">API Key</label>
+                <input class="form-control form-control-sm" id="cli-f-key" type="password" placeholder="sk-…" autocomplete="new-password" />
+                <div class="form-text" id="cli-f-key-hint" data-i18n="settings.cli.apiKeyHint">编辑时留空则保留原密钥</div>
+              </div>
+              <div class="col-md-6">
+                <label class="form-label small" for="cli-f-ctx" data-i18n="settings.cli.contextWindow">上下文窗口</label>
+                <input class="form-control form-control-sm" id="cli-f-ctx" type="number" min="1000" step="1000" placeholder="1000000" />
+              </div>
+              <div class="col-md-6 d-flex align-items-end">
+                <div class="form-check form-switch mb-2">
+                  <input class="form-check-input" type="checkbox" id="cli-f-search" />
+                  <label class="form-check-label small" for="cli-f-search" data-i18n="settings.cli.backendSearch">supports_backend_search</label>
+                </div>
+              </div>
+              <div class="col-12">
+                <label class="form-label small" for="cli-f-desc" data-i18n="settings.cli.desc">描述</label>
+                <input class="form-control form-control-sm" id="cli-f-desc" autocomplete="off" />
+              </div>
+              <div class="col-12">
+                <div class="form-check form-switch">
+                  <input class="form-check-input" type="checkbox" id="cli-f-default" checked />
+                  <label class="form-check-label small" for="cli-f-default" data-i18n="settings.cli.makeDefault">保存后立即启用</label>
+                </div>
+              </div>
+            </div>
+            <p class="text-danger small mt-2 mb-0 d-none" id="cli-f-error"></p>
+          </div>
+          <div class="modal-footer border-secondary-subtle">
+            <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-dismiss="modal" data-i18n="settings.cli.cancel">取消</button>
+            <button type="button" class="btn btn-primary btn-sm" id="cli-provider-save" data-i18n="settings.cli.save">保存</button>
+          </div>
+        </div>
+      </div>
     </div>
 
     <!-- Lightbox Modal -->

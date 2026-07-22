@@ -34,6 +34,7 @@ const mcp = require("./src/mcp");
 const { commandExists, defaultCwd, spawnCli } = require("./src/platform");
 const brand = require("./src/brand");
 const notified = require("./src/notified");
+const cliProviders = require("./src/cliProviders");
 
 let mainWindow = null;
 /** @type {Map<string, { client: import('./src/acp').AcpClient, meta: object|null, cwd: string, lastUsed: number }>} */
@@ -1554,6 +1555,50 @@ ipcMain.handle("wallpaper:list", async () => {
 
 ipcMain.handle("settings:saveGrok", async (_e, partial) => {
   return settings.updateGrokConfig(partial || {});
+});
+
+// ── CLI providers (ccswitch-style) ─────────────────────
+
+ipcMain.handle("cli:providers:list", async () => cliProviders.listProviders());
+ipcMain.handle("cli:providers:get", async (_e, { id, includeSecret } = {}) => {
+  return cliProviders.getProvider(id, { includeSecret: !!includeSecret });
+});
+ipcMain.handle("cli:providers:switch", async (_e, { id } = {}) => {
+  try {
+    return { ok: true, ...cliProviders.switchProvider(id) };
+  } catch (err) {
+    return { ok: false, error: asIpcError(err).message };
+  }
+});
+ipcMain.handle("cli:providers:save", async (_e, payload = {}) => {
+  try {
+    return { ok: true, ...cliProviders.saveProvider(payload) };
+  } catch (err) {
+    return { ok: false, error: asIpcError(err).message };
+  }
+});
+ipcMain.handle("cli:providers:delete", async (_e, { id } = {}) => {
+  try {
+    return { ok: true, ...cliProviders.deleteProvider(id) };
+  } catch (err) {
+    return { ok: false, error: asIpcError(err).message };
+  }
+});
+ipcMain.handle("cli:providers:endpoints", async (_e, patch = {}) => {
+  try {
+    return { ok: true, ...cliProviders.updateEndpoints(patch) };
+  } catch (err) {
+    return { ok: false, error: asIpcError(err).message };
+  }
+});
+ipcMain.handle("cli:providers:open-dir", async () => {
+  const dir = cliProviders.openConfigDir();
+  try {
+    await shell.openPath(dir);
+  } catch {
+    /* ignore */
+  }
+  return { ok: true, path: dir, configPath: cliProviders.configPath() };
 });
 
 // ── Plugins ────────────────────────────────────────────

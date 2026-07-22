@@ -56,6 +56,16 @@ contextBridge.exposeInMainWorld("grokDesktop", {
   saveGrokSettings: (p) => ipcRenderer.invoke("settings:saveGrok", p),
   listWallpapers: () => ipcRenderer.invoke("wallpaper:list"),
 
+  // CLI providers (ccswitch-style)
+  listCliProviders: () => ipcRenderer.invoke("cli:providers:list"),
+  getCliProvider: (id, includeSecret) =>
+    ipcRenderer.invoke("cli:providers:get", { id, includeSecret: !!includeSecret }),
+  switchCliProvider: (id) => ipcRenderer.invoke("cli:providers:switch", { id }),
+  saveCliProvider: (payload) => ipcRenderer.invoke("cli:providers:save", payload || {}),
+  deleteCliProvider: (id) => ipcRenderer.invoke("cli:providers:delete", { id }),
+  saveCliEndpoints: (patch) => ipcRenderer.invoke("cli:providers:endpoints", patch || {}),
+  openCliConfigDir: () => ipcRenderer.invoke("cli:providers:open-dir"),
+
   // plugins
   listInstalledPlugins: () => ipcRenderer.invoke("plugins:listInstalled"),
   listAvailablePlugins: () => ipcRenderer.invoke("plugins:listAvailable"),
